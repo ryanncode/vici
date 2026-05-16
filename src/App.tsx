@@ -11,6 +11,7 @@ import { parseM3U, generateM3U } from './utils/m3uParser';
 import type { Track, TrackMetadata, TrackSegment } from './types/mixer';
 
 import { Waveform } from './components/Waveform';
+import { useRegisterSW } from 'virtual:pwa-register/react';
 
 const formatDuration = (seconds: number | string) => {
   if (typeof seconds === 'string') return seconds;
@@ -26,6 +27,18 @@ const formatAdjustedTime = (seconds: number, pitch: number) => {
 };
 
 export default function App() {
+  const {
+    needRefresh: [needRefresh, setNeedRefresh],
+    updateServiceWorker,
+  } = useRegisterSW({
+    onRegistered(r: unknown) {
+      console.log('SW Registered:', r);
+    },
+    onRegisterError(error: unknown) {
+      console.error('SW registration error', error);
+    },
+  });
+
   const [library, setLibrary] = useState<Track[]>([]);
   const [deckA, setDeckA] = useState<{ track: Track | null; isPlaying: boolean; introMarker: number; outroMarker: number; peaks: Float32Array | null; segments: TrackSegment[] }>({ track: null, isPlaying: false, introMarker: 0, outroMarker: 0, peaks: null, segments: [] });
   const [deckB, setDeckB] = useState<{ track: Track | null; isPlaying: boolean; introMarker: number; outroMarker: number; peaks: Float32Array | null; segments: TrackSegment[] }>({ track: null, isPlaying: false, introMarker: 0, outroMarker: 0, peaks: null, segments: [] });
@@ -898,6 +911,16 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-200 font-sans overflow-hidden select-none">
       
+      {needRefresh && (
+        <div className="absolute top-4 right-4 z-50 bg-blue-600 text-white px-4 py-3 rounded-lg shadow-2xl flex items-center gap-4 border border-blue-400/30">
+          <span className="text-sm font-bold tracking-wide">Update Available</span>
+          <div className="flex gap-2">
+            <button className="px-3 py-1.5 bg-white text-blue-900 font-bold hover:bg-blue-50 rounded text-xs transition" onClick={() => updateServiceWorker(true)}>Reload App</button>
+            <button className="px-3 py-1.5 hover:bg-black/20 rounded text-xs font-medium transition" onClick={() => setNeedRefresh(false)}>Dismiss</button>
+          </div>
+        </div>
+      )}
+
       {/* @ts-expect-error directory attribute is non-standard but heavily supported */}
       <input type="file" ref={fallbackDirInputRef} style={{ display: 'none' }} multiple webkitdirectory="true" directory="true" onChange={handleFallbackFiles} />
       <input type="file" ref={fallbackM3uInputRef} style={{ display: 'none' }} accept=".m3u,.m3u8" onChange={handleFallbackM3u} />
