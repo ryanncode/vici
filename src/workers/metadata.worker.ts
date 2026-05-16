@@ -14,8 +14,203 @@ function generateId(filePath: string, size: number): string {
   }
 }
 
-self.onmessage = async (e: MessageEvent<{ jobId: string, file: File, filePath?: string, existingId?: string }>) => {
-  const { jobId, file, filePath, existingId } = e.data;
+import type { TrackSegment } from '../types/mixer';
+
+function getColorForSegmentType(type: TrackSegment['type']): string {
+  switch (type) {
+    case 'intro': return '#3b82f6'; // Blue
+    case 'verse': return '#22c55e'; // Green
+    case 'chorus': return '#ef4444'; // Red
+    case 'bridge': return '#eab308'; // Yellow
+    case 'outro': return '#a855f7'; // Purple
+    default: return '#64748b'; // Slate
+  }
+}
+
+function analyzeSegmentsLogic(peaks: Float32Array, duration: number, originalBpm: number): TrackSegment[] {
+  const numPeaks = peaks.length;
+  const secondsPerPeak = duration / numPeaks;
+  
+  // 1. Smoothen the peaks (moving average) to get broader energy levels
+  const smoothWindow = Math.ceil(4.0 / secondsPerPeak); // ~4 seconds window
+  const smoothPeaks = new Float32Array(numPeaks);
+  for (let i = 0; i < numPeaks; i++) {
+    let sum = 0;
+    let count = 0;
+    for (let j = Math.max(0, i - smoothWindow); j < Math.min(numPeaks, i + smoothWindow); j++) {
+      sum += peaks[j];
+      count++;
+    }
+    smoothPeaks[i] = sum / count;
+  }
+
+  // 2. Identify segments by applying thresholds
+  const rawSegments: TrackSegment[] = [];
+  let currentType: TrackSegment['type'] | null = null;
+  let currentStart = 0;
+
+  for (let i = 0; i < numPeaks; i++) {
+    const val = smoothPeaks[i];
+    let type: TrackSegment['type'];
+    
+    if (val < 0.25) {
+      type = 'intro';
+    } else if (val > 0.65) {
+      type = 'chorus';
+    } else if (val > 0.45) {
+      type = 'bridge';
+    } else {
+      type = 'verse';
+    }
+
+    if (type !== currentType) {
+      if (currentType !== null) {
+        rawSegments.push({
+          start: currentStart * secondsPerPeak,
+          end: i * secondsPerPeak,
+          type: currentType,
+          color: getColorForSegmentType(currentType)
+        });
+      }
+      currentType = type;
+      currentStart = i;
+    }
+  }
+  
+  if (currentType !== null) {
+    rawSegments.push({
+      start: currentStart * secondsPerPeak,
+      end: duration,
+      type: currentType,
+      color: getColorForSegmentType(currentType)
+    });
+  }
+
+  // 3. Clean up
+  if (rawSegments.length === 0) return [];
+  
+  const minDuration = 8.0;
+  const cleaned: TrackSegment[] = [rawSegments[0]];
+  
+  for (let i = 1; i < rawSegments.length; i++) {
+    const prev = cleaned[cleaned.length - 1];
+    const curr = rawSegments[i];
+    
+    if (curr.end - curr.start < minDuration) {
+      prev.end = curr.end;
+    } else {
+      cleaned.push({ ...curr });
+    }
+  }
+  
+  const bpm = originalBpm > 0 ? originalBpm : 120;
+  const phraseLength = (60 / bpm) * 32;
+  const subdivided: TrackSegment[] = [];
+  
+  for (const seg of cleaned) {
+    const segDur = seg.end - seg.start;
+    if (segDur > phraseLength * 1.5) {
+      const numPieces = Math.ceil(segDur / phraseLength);
+      const actualPieceLen = segDur / numPieces;
+      for (let k = 0; k < numPieces; k++) {
+        subdivided.push({
+          start: seg.start + k * actualPieceLen,
+          end: seg.start + (k + 1) * actualPieceLen,
+          type: seg.type,
+          color: seg.color
+        });
+      }
+    } else {
+      subdivided.push(seg);
+    }
+  }
+  
+  const mixOutWindowStart = Math.max(duration / 2, duration - Math.min(180, duration * 0.35));
+  let foundOutroDrop = false;
+  
+  for (let i = 0; i < subdivided.length; i++) {
+    const seg = subdivided[i];
+    if (seg.start >= mixOutWindowStart && seg.type !== 'chorus') {
+      let hasChorusAfter = false;
+      for (let j = i + 1; j < subdivided.length; j++) {
+        if (subdivided[j].type === 'chorus') {
+          hasChorusAfter = true;
+          break;
+        }
+      }
+      
+      if (!hasChorusAfter) {
+        seg.type = 'outro';
+        seg.color = getColorForSegmentType('outro');
+        for (let j = i + 1; j < subdivided.length; j++) {
+           subdivided[j].type = 'outro';
+           subdivided[j].color = getColorForSegmentType('outro');
+        }
+        foundOutroDrop = true;
+        break; 
+      }
+    }
+  }
+  
+  if (!foundOutroDrop && subdivided.length > 0) {
+    const forcedPhrases = duration > 300 ? 4 : 2; 
+    const forceOutroStart = Math.max(duration / 2, duration - phraseLength * forcedPhrases);
+    for (let i = subdivided.length - 1; i >= 0; i--) {
+      const seg = subdivided[i];
+      if (seg.start >= forceOutroStart) {
+        seg.type = 'outro';
+        seg.color = getColorForSegmentType('outro');
+      }
+    }
+  }
+
+  return subdivided;
+}
+
+self.onmessage = async (e: MessageEvent<{ type?: string, jobId: string, file?: File, filePath?: string, existingId?: string, audioData?: Float32Array, duration?: number, bpm?: number }>) => {
+  const data = e.data;
+  
+  if (data.type === 'analyze_waveform') {
+    const { jobId, audioData, duration, bpm } = data;
+    try {
+      if (!audioData || !duration) throw new Error("Missing audio data for waveform analysis");
+      
+      const numPeaks = 1000;
+      const blockSize = Math.floor(audioData.length / numPeaks);
+      const peaks = new Float32Array(numPeaks);
+      
+      for (let i = 0; i < numPeaks; i++) {
+        let sum = 0;
+        const start = i * blockSize;
+        const end = start + blockSize;
+        for (let j = start; j < end; j++) {
+          sum += Math.abs(audioData[j]);
+        }
+        peaks[i] = sum / blockSize;
+      }
+      
+      let max = 0;
+      for (let i = 0; i < numPeaks; i++) {
+        if (peaks[i] > max) max = peaks[i];
+      }
+      if (max > 0) {
+        for (let i = 0; i < numPeaks; i++) {
+          peaks[i] = peaks[i] / max;
+        }
+      }
+
+      const segments = analyzeSegmentsLogic(peaks, duration, bpm || 120);
+      
+      self.postMessage({ jobId, success: true, peaks, segments });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      self.postMessage({ jobId, success: false, error: errorMessage });
+    }
+    return;
+  }
+
+  // Fallback to existing metadata extraction
+  const { jobId, file, filePath, existingId } = data;
   try {
     if (!file) throw new Error("No file provided to worker");
 
