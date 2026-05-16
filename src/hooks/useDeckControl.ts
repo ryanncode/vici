@@ -99,11 +99,155 @@ export function useDeckControl(deckId: 'A' | 'B') {
     deckEngine.seek(value);
   };
 
+  const setPitch = (newPitch: number) => {
+    const engine = AudioEngine.getInstance();
+    const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
+    
+    let finalPitch = newPitch;
+    if (newPitch !== 1.0 && deckEngine.originalBpm > 0) {
+      const rawBpm = newPitch * deckEngine.originalBpm;
+      const snappedBpm = Math.round(rawBpm * 10) / 10;
+      finalPitch = snappedBpm / deckEngine.originalBpm;
+    }
+    
+    deckEngine.setPlaybackRate(finalPitch);
+    setDeckState(deckId, { pitch: finalPitch, currentBpm: deckEngine.currentBpm });
+    
+    const store = useMixerStore.getState();
+    const otherDeckId = deckId === 'A' ? 'B' : 'A';
+    const otherDeckState = otherDeckId === 'A' ? store.deckA : store.deckB;
+    const isMaster = store.masterDeck === deckId;
+    
+    if (otherDeckState.sync || isMaster) {
+      const otherDeckEngine = deckId === 'A' ? engine.deckB : engine.deckA;
+      if (otherDeckEngine.originalBpm > 0) {
+        const requiredPitch = deckEngine.currentBpm / otherDeckEngine.originalBpm;
+        otherDeckEngine.setPlaybackRate(requiredPitch);
+        store.setDeckState(otherDeckId, { pitch: requiredPitch, currentBpm: otherDeckEngine.currentBpm });
+      }
+    }
+  };
+
+  const nudgePitch = (bpmDelta: number) => {
+    const engine = AudioEngine.getInstance();
+    const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
+    const currentPitch = storeDeck.pitch;
+    if (deckEngine.originalBpm > 0) {
+      const currentBpm = deckEngine.originalBpm * currentPitch;
+      const targetBpm = currentBpm + bpmDelta;
+      let newPitch = targetBpm / deckEngine.originalBpm;
+      newPitch = Math.max(0.84, Math.min(1.16, newPitch));
+      setPitch(newPitch);
+    }
+  };
+
+  const toggleMute = () => {
+    const engine = AudioEngine.getInstance();
+    const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
+    const newMute = !storeDeck.mute;
+    deckEngine.player.mute = newMute;
+    setDeckState(deckId, { mute: newMute });
+  };
+  
+  const toggleSync = (sync: boolean) => {
+    setDeckState(deckId, { sync });
+    if (sync) {
+       const engine = AudioEngine.getInstance();
+       const otherDeckEngine = deckId === 'A' ? engine.deckB : engine.deckA;
+       const thisDeckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
+       
+       if (otherDeckEngine.currentBpm > 0 && thisDeckEngine.originalBpm > 0) {
+         const requiredPitch = otherDeckEngine.currentBpm / thisDeckEngine.originalBpm;
+         thisDeckEngine.setPlaybackRate(requiredPitch);
+         setDeckState(deckId, { pitch: requiredPitch, currentBpm: thisDeckEngine.currentBpm });
+       }
+    }
+  };
+  
+  const toggleMaster = () => {
+    const store = useMixerStore.getState();
+    if (store.masterDeck === deckId) {
+       store.setMasterDeck(null);
+    } else {
+       store.setMasterDeck(deckId);
+       const engine = AudioEngine.getInstance();
+       const otherDeckEngine = deckId === 'A' ? engine.deckB : engine.deckA;
+       const thisDeckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
+       if (thisDeckEngine.currentBpm > 0 && otherDeckEngine.originalBpm > 0) {
+         const requiredPitch = thisDeckEngine.currentBpm / otherDeckEngine.originalBpm;
+         otherDeckEngine.setPlaybackRate(requiredPitch);
+         store.setDeckState(deckId === 'A' ? 'B' : 'A', { pitch: requiredPitch, currentBpm: otherDeckEngine.currentBpm });
+       }
+    }
+  };
+  
+  const handleFxToggle = (fxType: 'delay' | 'reverb' | 'phaser' | 'gate' | 'roll' | 'siren') => {
+    const engine = AudioEngine.getInstance();
+    const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
+    const currentFx = storeDeck.fx;
+    const store = useMixerStore.getState();
+    
+    if (fxType === 'delay') {
+      const newState = !currentFx.delayOn;
+      store.setDeckFx(deckId, { delayOn: newState });
+      deckEngine.setDelayState(newState);
+    } else if (fxType === 'reverb') {
+      const newState = !currentFx.reverbOn;
+      store.setDeckFx(deckId, { reverbOn: newState });
+      deckEngine.setReverbState(newState);
+    } else if (fxType === 'phaser') {
+      const newState = !currentFx.phaserOn;
+      store.setDeckFx(deckId, { phaserOn: newState });
+      deckEngine.setPhaserState(newState);
+    } else if (fxType === 'gate') {
+      const newState = !currentFx.gateOn;
+      store.setDeckFx(deckId, { gateOn: newState });
+      deckEngine.setGateState(newState);
+    } else if (fxType === 'roll') {
+      const newState = !currentFx.rollOn;
+      store.setDeckFx(deckId, { rollOn: newState });
+      deckEngine.setRoll(newState, 8);
+    } else if (fxType === 'siren') {
+      const newState = !currentFx.sirenOn;
+      store.setDeckFx(deckId, { sirenOn: newState });
+      deckEngine.triggerSiren(newState);
+    }
+  };
+
+  const handleFxParamChange = (fxType: 'delay' | 'reverb' | 'phaser', param: 'time' | 'feedback' | 'size' | 'rate', value: number) => {
+    const engine = AudioEngine.getInstance();
+    const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
+    const store = useMixerStore.getState();
+    
+    if (fxType === 'delay') {
+      if (param === 'time') {
+        store.setDeckFx(deckId, { delayTime: value });
+        deckEngine.setDelayTime(value);
+      } else if (param === 'feedback') {
+        store.setDeckFx(deckId, { delayFeedback: value });
+        deckEngine.setDelayFeedback(value);
+      }
+    } else if (fxType === 'reverb' && param === 'size') {
+      store.setDeckFx(deckId, { reverbSize: value });
+      deckEngine.setReverbSize(value);
+    } else if (fxType === 'phaser' && param === 'rate') {
+      store.setDeckFx(deckId, { phaserRate: value });
+      deckEngine.setPhaserRate(value);
+    }
+  };
+
   return {
     state: storeDeck,
     loadTrack,
     togglePlayback,
     setVolume,
     seek,
+    setPitch,
+    nudgePitch,
+    toggleMute,
+    toggleSync,
+    toggleMaster,
+    handleFxToggle,
+    handleFxParamChange
   };
 }

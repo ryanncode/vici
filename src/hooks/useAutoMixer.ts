@@ -3,10 +3,11 @@ import * as Tone from 'tone';
 import { AudioEngine } from '../services/AudioEngine';
 import { createTrackUrl } from '../services/FileManager';
 import type { Track } from '../types/mixer';
+import type { DeckState } from '../store/mixerStore';
 
 interface AutoMixerProps {
-  deckAState: { track: Track | null; isPlaying: boolean; introMarker?: number; outroMarker?: number };
-  deckBState: { track: Track | null; isPlaying: boolean; introMarker?: number; outroMarker?: number };
+  deckAState: DeckState;
+  deckBState: DeckState;
   library: Track[];
   isAutomixEnabled: boolean;
   onTransitionStart: (winningDeck: 'A' | 'B', nextTrack: Track) => void;
@@ -176,5 +177,5 @@ export function useAutoMixer({ deckAState, deckBState, library, isAutomixEnabled
     return () => {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
     };
-  }, [deckAState, deckBState, library, isAutomixEnabled, onTransitionComplete]);
+  }, [deckAState, deckBState, library, isAutomixEnabled, onTransitionComplete, onTransitionStart, onTransitionCancel, onPitchChange]);
 }

@@ -31,17 +31,20 @@ Vici Pro is a high-performance, web-based dual-deck DJ auto-mixing application. 
 ### Installation
 
 1. Clone the repository:
+
    ```bash
    git clone https://github.com/yourusername/vici.git
    cd vici
    ```
 
 2. Install dependencies:
+
    ```bash
    npm install
    ```
 
 3. Start the development server:
+
    ```bash
    npm run dev
    ```

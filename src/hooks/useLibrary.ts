@@ -1,11 +1,27 @@
+import { useRef } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../services/Database';
 import { useLibraryStore } from '../store/libraryStore';
 import { loadLocalDirectory, type FileSystemFileHandle } from '../services/FileManager';
 import { metadataScanner } from '../services/MetadataScanner';
+import type { Track, TrackMetadata } from '../types/mixer';
 
 export function useLibrary() {
   const store = useLibraryStore();
   
+  const fallbackDirInputRef = useRef<HTMLInputElement>(null);
+  
+  const rawSessionTracks = useLiveQuery(
+    async () => {
+      if (store.activeSessionTrackIds.length === 0) return [];
+      return await db.tracks.where('id').anyOf(store.activeSessionTrackIds).toArray();
+    },
+    [store.activeSessionTrackIds]
+  ) || [];
+
+  const sessionTracks = rawSessionTracks.map(t => ({ ...t, ...store.sessionHandles[t.id] }));
+  const displayTracks: (Track | TrackMetadata)[] = store.activeTab === 'tracks' ? (store.sessionStarted ? sessionTracks : []) : store.library;
+
   const handleLoadDirectory = async () => {
     if ('showDirectoryPicker' in window) {
       try {
@@ -63,6 +79,55 @@ export function useLibrary() {
         console.warn('Directory picker failed', e);
       }
     }
+    fallbackDirInputRef.current?.click();
+  };
+
+  const handleFallbackFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+    const files = Array.from(e.target.files);
+    const audioFiles = files.filter(f => ['audio/mpeg', 'audio/wav', 'audio/flac', 'audio/ogg'].includes(f.type) || f.name.match(/\.(mp3|wav|flac|ogg)$/i));
+    
+    if (audioFiles.length === 0) {
+      alert("No valid audio files found in selection.");
+      return;
+    }
+
+    const newIds: string[] = [];
+    const newHandles: Record<string, { rawFile: File }> = {};
+    const unScanned: { id: string, rawFile: File, filePath: string }[] = [];
+
+    for (let i = 0; i < audioFiles.length; i++) {
+      const file = audioFiles[i];
+      const id = `fallback-${Date.now()}-${i}`;
+      await db.tracks.put({
+        id,
+        filePath: file.name,
+        fileName: file.name,
+        title: file.name.replace(/\.[^/.]+$/, ""),
+        artist: 'Local File',
+        bpm: 120,
+        duration: 0
+      });
+      newIds.push(id);
+      newHandles[id] = { rawFile: file };
+      unScanned.push({ id, rawFile: file, filePath: file.name });
+    }
+
+    store.setSessionHandles(prev => ({ ...prev, ...newHandles }));
+    store.setActiveSessionTrackIds(prev => Array.from(new Set([...prev, ...newIds])));
+    store.setSessionStarted(true);
+    store.setActiveTab('tracks');
+
+    const processFallbackBackgroundScan = async () => {
+      for (const t of unScanned) {
+        try {
+          await metadataScanner.scanFileHandle(undefined, t.filePath, t.rawFile, t.id);
+        } catch (error) {
+          console.error("Fallback background scan failed:", error);
+        }
+      }
+    };
+    processFallbackBackgroundScan();
   };
 
   const clearCache = async () => {
@@ -78,7 +143,10 @@ export function useLibrary() {
 
   return {
     ...store,
+    displayTracks,
     handleLoadDirectory,
-    clearCache
+    clearCache,
+    fallbackDirInputRef,
+    handleFallbackFiles
   };
 }
