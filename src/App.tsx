@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as Tone from 'tone';
-import { Play, Square, Music, ArrowLeftSquare, ArrowRightSquare, ToggleLeft, ToggleRight, FolderSearch, FolderOpen, Save, ListMusic, Link, Lock, Scan } from 'lucide-react';
+import { Play, Square, Music, ArrowLeftSquare, ArrowRightSquare, ToggleLeft, ToggleRight, FolderSearch, FolderOpen, Save, ListMusic, Scan } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './services/Database';
 import { metadataScanner } from './services/MetadataScanner';
@@ -11,13 +11,6 @@ import { parseM3U, generateM3U } from './utils/m3uParser';
 import type { Track, TrackMetadata } from './types/mixer';
 
 import { Waveform } from './components/Waveform';
-
-// Mock Library Data for Verification
-const MOCK_LIBRARY: Track[] = [
-  { id: '1', title: 'Deep House Groove', artist: 'Lofi Core', album: 'Chill Vibes Vol 1', year: 2023, genre: 'Deep House', key: 'Am', fileType: 'OGG', bitrate: 320000, bpm: 122, duration: '05:24', url: 'https://actions.google.com/sounds/v1/science_fiction/ambient_space_machine.ogg' },
-  { id: '2', title: 'Synthwave Driver', artist: 'Retro Future', album: 'Night Drive', year: 2021, genre: 'Synthwave', key: 'Fm', fileType: 'OGG', bitrate: 256000, bpm: 118, duration: '04:12', url: 'https://actions.google.com/sounds/v1/science_fiction/retro_teleport.ogg' },
-  { id: '3', title: 'Cosmic Journey', artist: 'Space Beats', album: 'Galaxy', year: 2024, genre: 'Ambient', key: 'C', fileType: 'OGG', bitrate: 192000, bpm: 124, duration: '03:45', url: 'https://actions.google.com/sounds/v1/science_fiction/force_field_loop.ogg' },
-];
 
 const formatDuration = (seconds: number | string) => {
   if (typeof seconds === 'string') return seconds;
@@ -33,7 +26,7 @@ const formatAdjustedTime = (seconds: number, pitch: number) => {
 };
 
 export default function App() {
-  const [library, setLibrary] = useState<Track[]>(MOCK_LIBRARY);
+  const [library, setLibrary] = useState<Track[]>([]);
   const [deckA, setDeckA] = useState<{ track: Track | null; isPlaying: boolean; introMarker: number; outroMarker: number; peaks: Float32Array | null }>({ track: null, isPlaying: false, introMarker: 0, outroMarker: 0, peaks: null });
   const [deckB, setDeckB] = useState<{ track: Track | null; isPlaying: boolean; introMarker: number; outroMarker: number; peaks: Float32Array | null }>({ track: null, isPlaying: false, introMarker: 0, outroMarker: 0, peaks: null });
   const [xfade, setXfade] = useState<number>(0.5);
@@ -71,7 +64,7 @@ export default function App() {
   const dbTracks = useLiveQuery(() => db.tracks.toArray()) || [];
   const displayTracks: (Track | TrackMetadata)[] = activeTab === 'tracks' ? dbTracks : library;
 
-  const [mixerHeightPct, setMixerHeightPct] = useState(50);
+  const [mixerHeightPct, setMixerHeightPct] = useState(65);
   const [isLibraryMaximized, setIsLibraryMaximized] = useState(false);
   const dragRef = useRef<boolean>(false);
 
@@ -357,7 +350,7 @@ export default function App() {
       }
     } catch (err) {
       console.error("Audio load error:", err);
-      alert("Failed to load track. If using mocks, they might be offline. Use 'Load Directory' for local files.");
+      alert("Failed to load track. Please check file permissions or try re-loading the directory.");
       if (deckId === 'A') setDeckA(prev => ({ ...prev, track: null }));
       else setDeckB(prev => ({ ...prev, track: null }));
     }
@@ -612,44 +605,17 @@ export default function App() {
       <input type="file" ref={fallbackDirInputRef} style={{ display: 'none' }} multiple webkitdirectory="true" directory="true" onChange={handleFallbackFiles} />
       <input type="file" ref={fallbackM3uInputRef} style={{ display: 'none' }} accept=".m3u,.m3u8" onChange={handleFallbackM3u} />
 
-      {/* TOP HEADER */}
-      <header className="flex justify-between items-center px-6 py-4 bg-slate-900 border-b border-slate-800 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-cyan-400 flex items-center justify-center">
-            <Play size={16} fill="white" className="ml-0.5" />
-          </div>
-          <h1 className="text-xl font-bold tracking-tight text-white">Vici <span className="text-blue-500 font-light">Pro</span></h1>
-        </div>
-        <div className="flex items-center gap-4">
-          <button 
-            onClick={handleLoadDirectory}
-            className="flex items-center gap-2 px-4 py-2 rounded shadow-sm text-sm font-medium transition bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700 hover:border-slate-600"
-          >
-            <FolderSearch size={16} className="text-blue-400" />
-            Load Library
-          </button>
-          <div className="h-6 w-px bg-slate-800"></div>
-          <button 
-            onClick={() => setIsAutomixEnabled(!isAutomixEnabled)}
-            className={`flex items-center gap-2 px-4 py-2 rounded shadow-sm text-sm font-medium transition ${isAutomixEnabled ? 'bg-blue-600/20 text-blue-400 border border-blue-500/50' : 'bg-slate-800 text-slate-400 border border-slate-700'}`}
-          >
-            {isAutomixEnabled ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
-            Automix Mode
-          </button>
-        </div>
-      </header>
-
       {/* MAIN CONTENT - HORIZONTAL SPLIT */}
       <div className="flex-1 flex flex-col min-h-0">
         
         {/* MIXER CONSOLE (TOP HALF) */}
         <div 
-          className="flex-[0_0_auto] min-h-0 p-2 sm:p-4 lg:p-6 2xl:p-8 bg-slate-950 grid grid-cols-[1fr_auto_1fr] gap-2 sm:gap-4 lg:gap-6 2xl:gap-8 shrink-0 shadow-xl overflow-y-auto"
-          style={{ height: isLibraryMaximized ? '0px' : `${mixerHeightPct}%`, display: isLibraryMaximized ? 'none' : 'grid' }}
+          className="flex-[0_0_auto] min-h-0 p-2 sm:p-4 lg:p-6 2xl:p-8 bg-slate-950 flex justify-center items-start gap-2 sm:gap-4 lg:gap-6 2xl:gap-8 shrink-0 shadow-xl overflow-y-auto overflow-x-auto"
+          style={{ height: isLibraryMaximized ? '0px' : `${mixerHeightPct}%`, display: isLibraryMaximized ? 'none' : 'flex' }}
         >
           
           {/* Deck A */}
-          <div className={`p-3 sm:p-4 lg:p-5 rounded-xl border flex flex-col gap-3 lg:gap-4 transition-colors ${deckA.isPlaying ? 'bg-slate-900/80 border-blue-500/30' : 'bg-slate-900/40 border-slate-800/80'}`}>
+          <div className={`flex-1 min-w-0 w-full p-3 sm:p-4 lg:p-5 rounded-xl border flex flex-col gap-2 transition-colors ${deckA.isPlaying ? 'bg-slate-900/80 border-blue-500/30' : 'bg-slate-900/40 border-slate-800/80'}`}>
             
             {/* 1. Waveform */}
             <div className="h-10 sm:h-12 lg:h-16 w-full shrink-0 rounded overflow-hidden shadow-inner bg-slate-950/50">
@@ -665,94 +631,40 @@ export default function App() {
               />
             </div>
 
-            {/* 2. Metadata & Time */}
-            <div className="flex justify-between items-start">
-              <div className="flex gap-3">
-                <div className="w-10 h-10 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-blue-500 font-black text-lg shrink-0">A</div>
-                <div className="overflow-hidden">
-                  <h2 className="text-base sm:text-lg font-bold text-white truncate w-40 sm:w-48">{deckA.track?.title || 'No Track'}</h2>
-                  <p className="text-xs sm:text-sm text-slate-400 truncate">{deckA.track?.artist || 'Ready to load'}</p>
-                  {deckA.track && (
-                    <div className="flex flex-col mt-0.5">
-                      <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[9px] sm:text-[10px] text-slate-500 font-mono leading-tight">
-                        {deckA.track.album && <span><span className="text-slate-600">ALB:</span> {deckA.track.album}</span>}
-                        {deckA.track.year && <span><span className="text-slate-600">YR:</span> {deckA.track.year}</span>}
-                        {deckA.track.genre && <span><span className="text-slate-600">GEN:</span> {deckA.track.genre}</span>}
-                        {deckA.track.key && <span><span className="text-slate-600">KEY:</span> {deckA.track.key}</span>}
-                        {deckA.track.fileType && <span><span className="text-slate-600">FMT:</span> {deckA.track.fileType}</span>}
-                        {deckA.track.bitrate && <span><span className="text-slate-600">KBPS:</span> {Math.round(deckA.track.bitrate / 1000)}</span>}
-                        {deckA.track.replayGain !== undefined && <span><span className="text-slate-600">GAIN:</span> {deckA.track.replayGain.toFixed(1)}dB</span>}
-                      </div>
-                      <div className="flex gap-3 mt-1 text-[9px] sm:text-[10px] font-mono text-slate-400">
-                        <span><span className="text-slate-500">TIME:</span> {formatAdjustedTime(progressA.current, pitchA)} / {formatAdjustedTime(progressA.max, pitchA)}</span>
-                        <span><span className="text-slate-500">IN:</span> {formatAdjustedTime(deckA.introMarker, pitchA)}</span>
-                        <span><span className="text-slate-500">OUT:</span> {formatAdjustedTime(progressA.max - deckA.outroMarker, pitchA)}</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="text-right shrink-0">
-                <div className="text-xl sm:text-2xl font-mono font-light text-cyan-400">{deckA.track ? bpmA.toFixed(1) : '---'}</div>
-                <div className="text-[9px] sm:text-[10px] uppercase text-slate-500 font-bold tracking-widest">BPM</div>
-              </div>
-            </div>
-            
-            {/* 3. Transport, Performance Pads & Pitch */}
-            <div className="flex justify-between items-center bg-slate-950/50 p-2 sm:p-3 rounded-lg border border-slate-800/50 mt-auto">
+            {/* 2. Transport & Metadata */}
+            <div className="flex items-center bg-slate-950/50 p-2 sm:p-3 rounded-lg border border-slate-800/50 gap-2 sm:gap-4 mt-auto">
               <button 
                 disabled={!deckA.track}
                 onClick={() => toggleDeck('A')}
-                className="w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white shadow-inner border border-slate-700/50 shrink-0"
+                className="w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white shadow-inner border border-slate-700/50 shrink-0"
               >
-                {deckA.isPlaying ? <Square size={20} fill="currentColor" className="text-blue-500" /> : <Play size={22} fill="currentColor" className="ml-1" />}
+                {deckA.isPlaying ? <Square size={18} fill="currentColor" className="text-blue-500" /> : <Play size={20} fill="currentColor" className="ml-1" />}
               </button>
 
-              <div className="flex gap-2 items-center mx-2 sm:mx-4 flex-1 justify-center">
-                <button
-                  onMouseDown={() => handleFxToggle('A', 'roll')}
-                  onMouseUp={() => handleFxToggle('A', 'roll')}
-                  onMouseLeave={() => fxA.rollOn && handleFxToggle('A', 'roll')}
-                  className={`w-12 h-10 sm:w-14 sm:h-12 rounded flex flex-col items-center justify-center border font-bold transition-all text-[8px] sm:text-[9px] ${fxA.rollOn ? 'bg-amber-500 text-white border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.6)]' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
-                >
-                  <span>ROLL</span><span>1/8</span>
-                </button>
-                <button
-                  onClick={() => handleFxToggle('A', 'gate')}
-                  className={`w-12 h-10 sm:w-14 sm:h-12 rounded flex flex-col items-center justify-center border font-bold transition-all text-[8px] sm:text-[9px] ${fxA.gateOn ? 'bg-purple-500 text-white border-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.6)]' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
-                >
-                  <span>TRANCE</span><span>GATE</span>
-                </button>
-                <button
-                  onMouseDown={() => handleFxToggle('A', 'siren')}
-                  onMouseUp={() => handleFxToggle('A', 'siren')}
-                  onMouseLeave={() => fxA.sirenOn && handleFxToggle('A', 'siren')}
-                  className={`w-12 h-10 sm:w-14 sm:h-12 rounded flex flex-col items-center justify-center border font-bold transition-all text-[8px] sm:text-[9px] ${fxA.sirenOn ? 'bg-red-500 text-white border-red-400 shadow-[0_0_15px_rgba(239,68,68,0.6)]' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
-                >
-                  <span>DUB</span><span>SIREN</span>
-                </button>
+              <div className="flex-1 min-w-0 flex flex-col justify-center">
+                <div className="flex justify-between items-end mb-0.5">
+                  <div className="truncate pr-2">
+                    <h2 className="text-sm sm:text-base font-bold text-white truncate">{deckA.track?.title || 'No Track'}</h2>
+                    <p className="text-[10px] sm:text-xs text-slate-400 truncate">{deckA.track?.artist || 'Ready to load'}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-lg sm:text-xl font-mono font-light text-cyan-400 leading-none">{deckA.track ? bpmA.toFixed(1) : '---'}</div>
+                    <div className="text-[8px] sm:text-[9px] uppercase text-slate-500 font-bold tracking-widest mt-0.5">BPM</div>
+                  </div>
+                </div>
+                {deckA.track && (
+                  <div className="flex gap-2 sm:gap-3 text-[9px] sm:text-[10px] font-mono text-slate-400">
+                    <span><span className="text-slate-500">TIME:</span> {formatAdjustedTime(progressA.current, pitchA)} / {formatAdjustedTime(progressA.max, pitchA)}</span>
+                    <span className="hidden sm:inline"><span className="text-slate-500">IN:</span> {formatAdjustedTime(deckA.introMarker, pitchA)}</span>
+                    <span className="hidden sm:inline"><span className="text-slate-500">OUT:</span> {formatAdjustedTime(progressA.max - deckA.outroMarker, pitchA)}</span>
+                    {deckA.track.key && <span className="hidden lg:inline"><span className="text-slate-600">KEY:</span> {deckA.track.key}</span>}
+                  </div>
+                )}
               </div>
 
-              <div className="flex gap-3 sm:gap-4 items-center shrink-0">
-                <div className="flex flex-col gap-1.5 sm:gap-2">
-                  <button 
-                    onMouseDown={() => handleSyncDown('A')}
-                    onMouseUp={() => handleSyncUp('A')}
-                    onMouseLeave={() => handleSyncUp('A')}
-                    className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded text-[9px] sm:text-[10px] font-bold transition-colors flex items-center gap-1 sm:gap-1.5 border ${syncA ? 'bg-blue-600 text-white border-blue-500 shadow-[0_0_10px_rgba(37,99,235,0.5)]' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
-                  >
-                    <Link size={10} className="sm:w-3 sm:h-3" /> SYNC
-                  </button>
-                  <button 
-                    onClick={() => handleMasterToggle('A')}
-                    className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded text-[9px] sm:text-[10px] font-bold transition-colors flex items-center gap-1 sm:gap-1.5 border ${masterDeck === 'A' ? 'bg-amber-600 text-white border-amber-500 shadow-[0_0_10px_rgba(217,119,6,0.5)]' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
-                  >
-                    <Lock size={10} className="sm:w-3 sm:h-3" /> MASTER
-                  </button>
-                </div>
-                
+              <div className="flex gap-2 sm:gap-3 items-center shrink-0 border-l border-slate-800/50 pl-2 sm:pl-3">
                 <div className="flex flex-col items-center gap-1 w-20 sm:w-24">
-                  <span className="text-[9px] sm:text-[10px] text-slate-400 font-bold tracking-widest">PITCH</span>
+                  <span className="text-[8px] sm:text-[9px] text-slate-400 font-bold tracking-widest leading-none">PITCH</span>
                   <input 
                     type="range" 
                     min="0.84" 
@@ -761,9 +673,26 @@ export default function App() {
                     value={pitchA} 
                     onChange={(e) => handlePitchChange('A', parseFloat(e.target.value))} 
                     onDoubleClick={() => handlePitchChange('A', 1.0)}
-                    className="w-full h-1.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-blue-500 shadow-inner" 
+                    className="w-full h-1 bg-slate-800 rounded-full appearance-none cursor-pointer accent-blue-500 shadow-inner" 
                   />
-                  <span className="text-[9px] sm:text-[10px] font-mono text-slate-500">{((pitchA - 1) * 100).toFixed(1)}%</span>
+                  <span className="text-[8px] sm:text-[9px] font-mono text-slate-500 leading-none">{((pitchA - 1) * 100).toFixed(1)}%</span>
+                  
+                  <div className="flex w-full gap-1 mt-0.5">
+                    <button 
+                      onMouseDown={() => handleSyncDown('A')}
+                      onMouseUp={() => handleSyncUp('A')}
+                      onMouseLeave={() => handleSyncUp('A')}
+                      className={`flex-1 py-0.5 rounded text-[7px] sm:text-[8px] font-bold transition-colors flex items-center justify-center border ${syncA ? 'bg-blue-600 text-white border-blue-500 shadow-[0_0_8px_rgba(37,99,235,0.5)]' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
+                    >
+                      SYNC
+                    </button>
+                    <button 
+                      onClick={() => handleMasterToggle('A')}
+                      className={`flex-1 py-0.5 rounded text-[7px] sm:text-[8px] font-bold transition-colors flex items-center justify-center border ${masterDeck === 'A' ? 'bg-amber-600 text-white border-amber-500 shadow-[0_0_8px_rgba(217,119,6,0.5)]' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
+                    >
+                      MST
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -771,7 +700,7 @@ export default function App() {
             {/* 4. Parametric FX Bay */}
             <div className="flex gap-2 sm:gap-3 p-2 sm:p-3 bg-slate-900/80 rounded-lg border border-slate-800/80">
               {/* Echo */}
-              <div className="flex flex-col gap-1.5 sm:gap-2 flex-1 border-r border-slate-800/50 pr-2 sm:pr-3">
+              <div className="flex flex-col gap-1.5 sm:gap-2 flex-1 min-w-0 border-r border-slate-800/50 pr-2 sm:pr-3">
                 <div className="flex justify-between items-center">
                   <span className="text-[9px] sm:text-[10px] font-bold tracking-widest text-blue-400">ECHO</span>
                   <button 
@@ -781,16 +710,21 @@ export default function App() {
                 </div>
                 <div className="flex items-center gap-1 sm:gap-2">
                   <span className="text-[7px] sm:text-[8px] text-slate-500 w-5 sm:w-7">TIME</span>
-                  <input type="range" min="0.05" max="1" step="0.01" value={fxA.delayTime} onChange={(e) => handleFxParamChange('A', 'delay', 'time', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('A', 'delay', 'time', 0.25)} className="flex-1 h-1 bg-slate-800 rounded appearance-none accent-slate-400" />
+                  <input type="range" min="0.05" max="1" step="0.01" value={fxA.delayTime} onChange={(e) => handleFxParamChange('A', 'delay', 'time', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('A', 'delay', 'time', 0.25)} className="flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400" />
                 </div>
                 <div className="flex items-center gap-1 sm:gap-2">
                   <span className="text-[7px] sm:text-[8px] text-slate-500 w-5 sm:w-7">FDBK</span>
-                  <input type="range" min="0" max="0.95" step="0.01" value={fxA.delayFeedback} onChange={(e) => handleFxParamChange('A', 'delay', 'feedback', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('A', 'delay', 'feedback', 0.5)} className="flex-1 h-1 bg-slate-800 rounded appearance-none accent-slate-400" />
+                  <input type="range" min="0" max="0.95" step="0.01" value={fxA.delayFeedback} onChange={(e) => handleFxParamChange('A', 'delay', 'feedback', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('A', 'delay', 'feedback', 0.5)} className="flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400" />
+                </div>
+                <div className="flex gap-1 justify-end -mt-1 flex-wrap">
+                  <button onClick={() => handleFxParamChange('A', 'delay', 'time', Math.min(1, 60 / (bpmA || 120)))} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">1/4</button>
+                  <button onClick={() => handleFxParamChange('A', 'delay', 'time', Math.min(1, (60 / (bpmA || 120)) * 0.5))} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">1/8</button>
+                  <button onClick={() => handleFxParamChange('A', 'delay', 'time', Math.min(1, (60 / (bpmA || 120)) * 0.25))} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">1/16</button>
                 </div>
               </div>
 
               {/* Reverb */}
-              <div className="flex flex-col gap-1.5 sm:gap-2 flex-1 border-r border-slate-800/50 pr-2 sm:pr-3">
+              <div className="flex flex-col gap-1.5 sm:gap-2 flex-1 min-w-0 border-r border-slate-800/50 pr-2 sm:pr-3">
                 <div className="flex justify-between items-center">
                   <span className="text-[9px] sm:text-[10px] font-bold tracking-widest text-cyan-400">REVERB</span>
                   <button 
@@ -800,12 +734,12 @@ export default function App() {
                 </div>
                 <div className="flex items-center gap-1 sm:gap-2 mt-auto mb-0.5 sm:mb-1">
                   <span className="text-[7px] sm:text-[8px] text-slate-500 w-5 sm:w-7">SIZE</span>
-                  <input type="range" min="0" max="1" step="0.01" value={fxA.reverbSize} onChange={(e) => handleFxParamChange('A', 'reverb', 'size', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('A', 'reverb', 'size', 0.7)} className="flex-1 h-1 bg-slate-800 rounded appearance-none accent-slate-400" />
+                  <input type="range" min="0" max="1" step="0.01" value={fxA.reverbSize} onChange={(e) => handleFxParamChange('A', 'reverb', 'size', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('A', 'reverb', 'size', 0.7)} className="flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400" />
                 </div>
               </div>
 
               {/* Phaser */}
-              <div className="flex flex-col gap-1.5 sm:gap-2 flex-1">
+              <div className="flex flex-col gap-1.5 sm:gap-2 flex-1 min-w-0">
                 <div className="flex justify-between items-center">
                   <span className="text-[9px] sm:text-[10px] font-bold tracking-widest text-fuchsia-400">PHASER</span>
                   <button 
@@ -815,7 +749,12 @@ export default function App() {
                 </div>
                 <div className="flex items-center gap-1 sm:gap-2 mt-auto mb-0.5 sm:mb-1">
                   <span className="text-[7px] sm:text-[8px] text-slate-500 w-5 sm:w-7">RATE</span>
-                  <input type="range" min="0.1" max="10" step="0.1" value={fxA.phaserRate} onChange={(e) => handleFxParamChange('A', 'phaser', 'rate', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('A', 'phaser', 'rate', 0.5)} className="flex-1 h-1 bg-slate-800 rounded appearance-none accent-slate-400" />
+                  <input type="range" min="0.1" max="10" step="0.1" value={fxA.phaserRate} onChange={(e) => handleFxParamChange('A', 'phaser', 'rate', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('A', 'phaser', 'rate', 0.5)} className="flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400" />
+                </div>
+                <div className="flex gap-1 justify-end -mt-1 flex-wrap">
+                  <button onClick={() => handleFxParamChange('A', 'phaser', 'rate', Math.min(10, ((bpmA || 120) / 60) * 0.25))} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">4 BARS</button>
+                  <button onClick={() => handleFxParamChange('A', 'phaser', 'rate', Math.min(10, ((bpmA || 120) / 60) * 0.5))} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">2 BARS</button>
+                  <button onClick={() => handleFxParamChange('A', 'phaser', 'rate', Math.min(10, (bpmA || 120) / 60))} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">1 BAR</button>
                 </div>
               </div>
             </div>
@@ -824,9 +763,22 @@ export default function App() {
 
           {/* Central Mixer Controls */}
           <div className="w-56 sm:w-64 lg:w-72 flex flex-col p-2 sm:p-4 rounded-xl border border-slate-800/80 bg-slate-900/60 shadow-inner">
-            <div className="flex w-full justify-between px-2 mb-2 sm:mb-4">
-              <div className="text-[10px] sm:text-xs font-bold text-slate-500 tracking-wider">CH A</div>
-              <div className="text-[10px] sm:text-xs font-bold text-slate-500 tracking-wider">CH B</div>
+            <div className="flex w-full justify-between items-start px-2 mb-2 sm:mb-4">
+              <div className="text-[10px] sm:text-xs font-bold text-slate-500 tracking-wider mt-1">CH A</div>
+              
+              <div className="flex flex-col items-center gap-1.5 -mt-1">
+                <h1 className="text-xl font-bold tracking-tight text-white leading-none">Vici</h1>
+                <button 
+                  onClick={() => setIsAutomixEnabled(!isAutomixEnabled)}
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold tracking-wide transition ${isAutomixEnabled ? 'bg-blue-600/20 text-blue-400 border border-blue-500/50' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'}`}
+                  title="Automix Mode"
+                >
+                  {isAutomixEnabled ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
+                  AUTOMIX
+                </button>
+              </div>
+
+              <div className="text-[10px] sm:text-xs font-bold text-slate-500 tracking-wider mt-1">CH B</div>
             </div>
 
             <div className="flex justify-between w-full flex-1 gap-2 sm:gap-4">
@@ -850,9 +802,35 @@ export default function App() {
                       <input type="range" min="-24" max="6" step="0.1" value={value} onChange={(e) => handler('A', band as 'high'|'mid'|'low', parseFloat(e.target.value))} onDoubleClick={() => handler('A', band as 'high'|'mid'|'low', 0)} className="w-full h-1 sm:h-1.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-slate-300 shadow-inner" />
                     </div>
                   ))}
-                  <div className="flex flex-col gap-1 mt-auto">
+                  {/* Performance Pads */}
+                  <div className="flex gap-1 mt-auto mb-1">
+                    <button
+                      onMouseDown={() => handleFxToggle('A', 'roll')}
+                      onMouseUp={() => handleFxToggle('A', 'roll')}
+                      onMouseLeave={() => fxA.rollOn && handleFxToggle('A', 'roll')}
+                      className={`flex-1 py-1 rounded text-[7px] font-bold transition-all ${fxA.rollOn ? 'bg-amber-500 text-white shadow-[0_0_8px_rgba(245,158,11,0.6)]' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'}`}
+                    >
+                      ROLL
+                    </button>
+                    <button
+                      onClick={() => handleFxToggle('A', 'gate')}
+                      className={`flex-1 py-1 rounded text-[7px] font-bold transition-all ${fxA.gateOn ? 'bg-purple-500 text-white shadow-[0_0_8px_rgba(168,85,247,0.6)]' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'}`}
+                    >
+                      GATE
+                    </button>
+                    <button
+                      onMouseDown={() => handleFxToggle('A', 'siren')}
+                      onMouseUp={() => handleFxToggle('A', 'siren')}
+                      onMouseLeave={() => fxA.sirenOn && handleFxToggle('A', 'siren')}
+                      className={`flex-1 py-1 rounded text-[7px] font-bold transition-all ${fxA.sirenOn ? 'bg-red-500 text-white shadow-[0_0_8px_rgba(239,68,68,0.6)]' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'}`}
+                    >
+                      SIREN
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col gap-1 mt-1 mb-1">
                     <span className="text-[8px] sm:text-[9px] text-blue-400 font-bold">FLT</span>
-                    <input type="range" min="-100" max="100" step="1" value={filterA} onChange={(e) => handleFilterChange('A', parseFloat(e.target.value))} onDoubleClick={() => handleFilterChange('A', 0)} className="w-full h-1 sm:h-1.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-blue-500 shadow-inner" />
+                    <input type="range" min="-100" max="100" step="1" value={filterA} onChange={(e) => handleFilterChange('A', parseFloat(e.target.value))} onDoubleClick={() => handleFilterChange('A', 0)} className="w-full h-2 sm:h-2.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-blue-500 shadow-inner" />
                   </div>
                 </div>
               </div>
@@ -877,9 +855,35 @@ export default function App() {
                       <input type="range" min="-24" max="6" step="0.1" value={value} onChange={(e) => handler('B', band as 'high'|'mid'|'low', parseFloat(e.target.value))} onDoubleClick={() => handler('B', band as 'high'|'mid'|'low', 0)} className="w-full h-1 sm:h-1.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-slate-300 shadow-inner rotate-180" />
                     </div>
                   ))}
-                  <div className="flex flex-col gap-1 mt-auto items-end w-full">
+                  {/* Performance Pads */}
+                  <div className="flex gap-1 mt-auto mb-1 w-full">
+                    <button
+                      onMouseDown={() => handleFxToggle('B', 'roll')}
+                      onMouseUp={() => handleFxToggle('B', 'roll')}
+                      onMouseLeave={() => fxB.rollOn && handleFxToggle('B', 'roll')}
+                      className={`flex-1 py-1 rounded text-[7px] font-bold transition-all ${fxB.rollOn ? 'bg-amber-500 text-white shadow-[0_0_8px_rgba(245,158,11,0.6)]' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'}`}
+                    >
+                      ROLL
+                    </button>
+                    <button
+                      onClick={() => handleFxToggle('B', 'gate')}
+                      className={`flex-1 py-1 rounded text-[7px] font-bold transition-all ${fxB.gateOn ? 'bg-purple-500 text-white shadow-[0_0_8px_rgba(168,85,247,0.6)]' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'}`}
+                    >
+                      GATE
+                    </button>
+                    <button
+                      onMouseDown={() => handleFxToggle('B', 'siren')}
+                      onMouseUp={() => handleFxToggle('B', 'siren')}
+                      onMouseLeave={() => fxB.sirenOn && handleFxToggle('B', 'siren')}
+                      className={`flex-1 py-1 rounded text-[7px] font-bold transition-all ${fxB.sirenOn ? 'bg-red-500 text-white shadow-[0_0_8px_rgba(239,68,68,0.6)]' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'}`}
+                    >
+                      SIREN
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col gap-1 mt-1 mb-1 items-end w-full">
                     <span className="text-[8px] sm:text-[9px] text-cyan-400 font-bold">FLT</span>
-                    <input type="range" min="-100" max="100" step="1" value={filterB} onChange={(e) => handleFilterChange('B', parseFloat(e.target.value))} onDoubleClick={() => handleFilterChange('B', 0)} className="w-full h-1 sm:h-1.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-cyan-500 shadow-inner rotate-180" />
+                    <input type="range" min="-100" max="100" step="1" value={filterB} onChange={(e) => handleFilterChange('B', parseFloat(e.target.value))} onDoubleClick={() => handleFilterChange('B', 0)} className="w-full h-2 sm:h-2.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-cyan-500 shadow-inner rotate-180" />
                   </div>
                 </div>
               </div>
@@ -901,7 +905,7 @@ export default function App() {
           </div>
 
           {/* Deck B */}
-          <div className={`p-3 sm:p-4 lg:p-5 rounded-xl border flex flex-col gap-3 lg:gap-4 transition-colors ${deckB.isPlaying ? 'bg-slate-900/80 border-blue-500/30' : 'bg-slate-900/40 border-slate-800/80'}`}>
+          <div className={`flex-1 min-w-0 w-full p-3 sm:p-4 lg:p-5 rounded-xl border flex flex-col gap-2 transition-colors ${deckB.isPlaying ? 'bg-slate-900/80 border-blue-500/30' : 'bg-slate-900/40 border-slate-800/80'}`}>
             
             {/* 1. Waveform */}
             <div className="h-10 sm:h-12 lg:h-16 w-full shrink-0 rounded overflow-hidden shadow-inner bg-slate-950/50">
@@ -917,94 +921,40 @@ export default function App() {
               />
             </div>
 
-            {/* 2. Metadata & Time */}
-            <div className="flex justify-between items-start flex-row-reverse text-right">
-              <div className="flex gap-3 flex-row-reverse">
-                <div className="w-10 h-10 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-cyan-500 font-black text-lg shrink-0">B</div>
-                <div className="overflow-hidden">
-                  <h2 className="text-base sm:text-lg font-bold text-white truncate w-40 sm:w-48">{deckB.track?.title || 'No Track'}</h2>
-                  <p className="text-xs sm:text-sm text-slate-400 truncate">{deckB.track?.artist || 'Ready to load'}</p>
-                  {deckB.track && (
-                    <div className="flex flex-col mt-0.5">
-                      <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[9px] sm:text-[10px] text-slate-500 font-mono leading-tight justify-end">
-                        {deckB.track.album && <span><span className="text-slate-600">ALB:</span> {deckB.track.album}</span>}
-                        {deckB.track.year && <span><span className="text-slate-600">YR:</span> {deckB.track.year}</span>}
-                        {deckB.track.genre && <span><span className="text-slate-600">GEN:</span> {deckB.track.genre}</span>}
-                        {deckB.track.key && <span><span className="text-slate-600">KEY:</span> {deckB.track.key}</span>}
-                        {deckB.track.fileType && <span><span className="text-slate-600">FMT:</span> {deckB.track.fileType}</span>}
-                        {deckB.track.bitrate && <span><span className="text-slate-600">KBPS:</span> {Math.round(deckB.track.bitrate / 1000)}</span>}
-                        {deckB.track.replayGain !== undefined && <span><span className="text-slate-600">GAIN:</span> {deckB.track.replayGain.toFixed(1)}dB</span>}
-                      </div>
-                      <div className="flex gap-3 mt-1 text-[9px] sm:text-[10px] font-mono text-slate-400 justify-end flex-row-reverse">
-                        <span>{formatAdjustedTime(progressB.current, pitchB)} / {formatAdjustedTime(progressB.max, pitchB)} <span className="text-slate-500">:TIME</span></span>
-                        <span>{formatAdjustedTime(deckB.introMarker, pitchB)} <span className="text-slate-500">:IN</span></span>
-                        <span>{formatAdjustedTime(progressB.max - deckB.outroMarker, pitchB)} <span className="text-slate-500">:OUT</span></span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="text-left shrink-0">
-                <div className="text-xl sm:text-2xl font-mono font-light text-cyan-400">{deckB.track ? bpmB.toFixed(1) : '---'}</div>
-                <div className="text-[9px] sm:text-[10px] uppercase text-slate-500 font-bold tracking-widest">BPM</div>
-              </div>
-            </div>
-            
-            {/* 3. Transport, Performance Pads & Pitch */}
-            <div className="flex justify-between items-center flex-row-reverse bg-slate-950/50 p-2 sm:p-3 rounded-lg border border-slate-800/50 mt-auto">
+            {/* 2. Transport & Metadata */}
+            <div className="flex items-center bg-slate-950/50 p-2 sm:p-3 rounded-lg border border-slate-800/50 gap-2 sm:gap-4 mt-auto flex-row-reverse text-right">
               <button 
                 disabled={!deckB.track}
                 onClick={() => toggleDeck('B')}
-                className="w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white shadow-inner border border-slate-700/50 shrink-0"
+                className="w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white shadow-inner border border-slate-700/50 shrink-0"
               >
-                {deckB.isPlaying ? <Square size={20} fill="currentColor" className="text-blue-500" /> : <Play size={22} fill="currentColor" className="mr-1" />}
+                {deckB.isPlaying ? <Square size={18} fill="currentColor" className="text-cyan-500" /> : <Play size={20} fill="currentColor" className="mr-1" />}
               </button>
 
-              <div className="flex gap-2 items-center mx-2 sm:mx-4 flex-1 justify-center flex-row-reverse">
-                <button
-                  onMouseDown={() => handleFxToggle('B', 'roll')}
-                  onMouseUp={() => handleFxToggle('B', 'roll')}
-                  onMouseLeave={() => fxB.rollOn && handleFxToggle('B', 'roll')}
-                  className={`w-12 h-10 sm:w-14 sm:h-12 rounded flex flex-col items-center justify-center border font-bold transition-all text-[8px] sm:text-[9px] ${fxB.rollOn ? 'bg-amber-500 text-white border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.6)]' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
-                >
-                  <span>ROLL</span><span>1/8</span>
-                </button>
-                <button
-                  onClick={() => handleFxToggle('B', 'gate')}
-                  className={`w-12 h-10 sm:w-14 sm:h-12 rounded flex flex-col items-center justify-center border font-bold transition-all text-[8px] sm:text-[9px] ${fxB.gateOn ? 'bg-purple-500 text-white border-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.6)]' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
-                >
-                  <span>TRANCE</span><span>GATE</span>
-                </button>
-                <button
-                  onMouseDown={() => handleFxToggle('B', 'siren')}
-                  onMouseUp={() => handleFxToggle('B', 'siren')}
-                  onMouseLeave={() => fxB.sirenOn && handleFxToggle('B', 'siren')}
-                  className={`w-12 h-10 sm:w-14 sm:h-12 rounded flex flex-col items-center justify-center border font-bold transition-all text-[8px] sm:text-[9px] ${fxB.sirenOn ? 'bg-red-500 text-white border-red-400 shadow-[0_0_15px_rgba(239,68,68,0.6)]' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
-                >
-                  <span>DUB</span><span>SIREN</span>
-                </button>
+              <div className="flex-1 min-w-0 flex flex-col justify-center">
+                <div className="flex justify-between items-end mb-0.5 flex-row-reverse">
+                  <div className="truncate pl-2">
+                    <h2 className="text-sm sm:text-base font-bold text-white truncate">{deckB.track?.title || 'No Track'}</h2>
+                    <p className="text-[10px] sm:text-xs text-slate-400 truncate">{deckB.track?.artist || 'Ready to load'}</p>
+                  </div>
+                  <div className="text-left shrink-0">
+                    <div className="text-lg sm:text-xl font-mono font-light text-cyan-400 leading-none">{deckB.track ? bpmB.toFixed(1) : '---'}</div>
+                    <div className="text-[8px] sm:text-[9px] uppercase text-slate-500 font-bold tracking-widest mt-0.5">BPM</div>
+                  </div>
+                </div>
+                {deckB.track && (
+                  <div className="flex gap-2 sm:gap-3 text-[9px] sm:text-[10px] font-mono text-slate-400 flex-row-reverse">
+                    <span>{formatAdjustedTime(progressB.current, pitchB)} / {formatAdjustedTime(progressB.max, pitchB)} <span className="text-slate-500">:TIME</span></span>
+                    <span className="hidden sm:inline">{formatAdjustedTime(deckB.introMarker, pitchB)} <span className="text-slate-500">:IN</span></span>
+                    <span className="hidden sm:inline">{formatAdjustedTime(progressB.max - deckB.outroMarker, pitchB)} <span className="text-slate-500">:OUT</span></span>
+                    {deckB.track.key && <span className="hidden lg:inline">{deckB.track.key} <span className="text-slate-600">:KEY</span></span>}
+                  </div>
+                )}
               </div>
 
-              <div className="flex gap-3 sm:gap-4 items-center flex-row-reverse shrink-0">
-                <div className="flex flex-col gap-1.5 sm:gap-2">
-                  <button 
-                    onMouseDown={() => handleSyncDown('B')}
-                    onMouseUp={() => handleSyncUp('B')}
-                    onMouseLeave={() => handleSyncUp('B')}
-                    className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded text-[9px] sm:text-[10px] font-bold transition-colors flex items-center gap-1 sm:gap-1.5 border ${syncB ? 'bg-blue-600 text-white border-blue-500 shadow-[0_0_10px_rgba(37,99,235,0.5)]' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
-                  >
-                    <Link size={10} className="sm:w-3 sm:h-3" /> SYNC
-                  </button>
-                  <button 
-                    onClick={() => handleMasterToggle('B')}
-                    className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded text-[9px] sm:text-[10px] font-bold transition-colors flex items-center gap-1 sm:gap-1.5 border ${masterDeck === 'B' ? 'bg-amber-600 text-white border-amber-500 shadow-[0_0_10px_rgba(217,119,6,0.5)]' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
-                  >
-                    <Lock size={10} className="sm:w-3 sm:h-3" /> MASTER
-                  </button>
-                </div>
-                
+              <div className="flex gap-2 sm:gap-3 items-center shrink-0 border-r border-slate-800/50 pr-2 sm:pr-3 flex-row-reverse">
                 <div className="flex flex-col items-center gap-1 w-20 sm:w-24">
-                  <span className="text-[9px] sm:text-[10px] text-slate-400 font-bold tracking-widest">PITCH</span>
+                  <span className="text-[8px] sm:text-[9px] text-slate-400 font-bold tracking-widest leading-none">PITCH</span>
                   <input 
                     type="range" 
                     min="0.84" 
@@ -1013,9 +963,26 @@ export default function App() {
                     value={pitchB} 
                     onChange={(e) => handlePitchChange('B', parseFloat(e.target.value))} 
                     onDoubleClick={() => handlePitchChange('B', 1.0)}
-                    className="w-full h-1.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-cyan-500 shadow-inner" 
+                    className="w-full h-1 bg-slate-800 rounded-full appearance-none cursor-pointer accent-cyan-500 shadow-inner" 
                   />
-                  <span className="text-[9px] sm:text-[10px] font-mono text-slate-500">{((pitchB - 1) * 100).toFixed(1)}%</span>
+                  <span className="text-[8px] sm:text-[9px] font-mono text-slate-500 leading-none">{((pitchB - 1) * 100).toFixed(1)}%</span>
+                  
+                  <div className="flex w-full gap-1 mt-0.5">
+                    <button 
+                      onClick={() => handleMasterToggle('B')}
+                      className={`flex-1 py-0.5 rounded text-[7px] sm:text-[8px] font-bold transition-colors flex items-center justify-center border ${masterDeck === 'B' ? 'bg-amber-600 text-white border-amber-500 shadow-[0_0_8px_rgba(217,119,6,0.5)]' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
+                    >
+                      MST
+                    </button>
+                    <button 
+                      onMouseDown={() => handleSyncDown('B')}
+                      onMouseUp={() => handleSyncUp('B')}
+                      onMouseLeave={() => handleSyncUp('B')}
+                      className={`flex-1 py-0.5 rounded text-[7px] sm:text-[8px] font-bold transition-colors flex items-center justify-center border ${syncB ? 'bg-blue-600 text-white border-blue-500 shadow-[0_0_8px_rgba(37,99,235,0.5)]' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
+                    >
+                      SYNC
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1023,7 +990,7 @@ export default function App() {
             {/* 4. Parametric FX Bay */}
             <div className="flex gap-2 sm:gap-3 p-2 sm:p-3 bg-slate-900/80 rounded-lg border border-slate-800/80 flex-row-reverse">
               {/* Echo */}
-              <div className="flex flex-col gap-1.5 sm:gap-2 flex-1 border-l border-slate-800/50 pl-2 sm:pl-3">
+              <div className="flex flex-col gap-1.5 sm:gap-2 flex-1 min-w-0 border-l border-slate-800/50 pl-2 sm:pl-3">
                 <div className="flex justify-between items-center flex-row-reverse">
                   <span className="text-[9px] sm:text-[10px] font-bold tracking-widest text-blue-400">ECHO</span>
                   <button 
@@ -1033,16 +1000,21 @@ export default function App() {
                 </div>
                 <div className="flex items-center gap-1 sm:gap-2 flex-row-reverse">
                   <span className="text-[7px] sm:text-[8px] text-slate-500 w-5 sm:w-7 text-right">TIME</span>
-                  <input type="range" min="0.05" max="1" step="0.01" value={fxB.delayTime} onChange={(e) => handleFxParamChange('B', 'delay', 'time', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('B', 'delay', 'time', 0.25)} className="flex-1 h-1 bg-slate-800 rounded appearance-none accent-slate-400 rotate-180" />
+                  <input type="range" min="0.05" max="1" step="0.01" value={fxB.delayTime} onChange={(e) => handleFxParamChange('B', 'delay', 'time', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('B', 'delay', 'time', 0.25)} className="flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400 rotate-180" />
                 </div>
                 <div className="flex items-center gap-1 sm:gap-2 flex-row-reverse">
                   <span className="text-[7px] sm:text-[8px] text-slate-500 w-5 sm:w-7 text-right">FDBK</span>
-                  <input type="range" min="0" max="0.95" step="0.01" value={fxB.delayFeedback} onChange={(e) => handleFxParamChange('B', 'delay', 'feedback', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('B', 'delay', 'feedback', 0.5)} className="flex-1 h-1 bg-slate-800 rounded appearance-none accent-slate-400 rotate-180" />
+                  <input type="range" min="0" max="0.95" step="0.01" value={fxB.delayFeedback} onChange={(e) => handleFxParamChange('B', 'delay', 'feedback', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('B', 'delay', 'feedback', 0.5)} className="flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400 rotate-180" />
+                </div>
+                <div className="flex gap-1 justify-start -mt-1 flex-row-reverse flex-wrap">
+                  <button onClick={() => handleFxParamChange('B', 'delay', 'time', Math.min(1, 60 / (bpmB || 120)))} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">1/4</button>
+                  <button onClick={() => handleFxParamChange('B', 'delay', 'time', Math.min(1, (60 / (bpmB || 120)) * 0.5))} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">1/8</button>
+                  <button onClick={() => handleFxParamChange('B', 'delay', 'time', Math.min(1, (60 / (bpmB || 120)) * 0.25))} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">1/16</button>
                 </div>
               </div>
 
               {/* Reverb */}
-              <div className="flex flex-col gap-1.5 sm:gap-2 flex-1 border-l border-slate-800/50 pl-2 sm:pl-3">
+              <div className="flex flex-col gap-1.5 sm:gap-2 flex-1 min-w-0 border-l border-slate-800/50 pl-2 sm:pl-3">
                 <div className="flex justify-between items-center flex-row-reverse">
                   <span className="text-[9px] sm:text-[10px] font-bold tracking-widest text-cyan-400">REVERB</span>
                   <button 
@@ -1052,12 +1024,12 @@ export default function App() {
                 </div>
                 <div className="flex items-center gap-1 sm:gap-2 mt-auto mb-0.5 sm:mb-1 flex-row-reverse">
                   <span className="text-[7px] sm:text-[8px] text-slate-500 w-5 sm:w-7 text-right">SIZE</span>
-                  <input type="range" min="0" max="1" step="0.01" value={fxB.reverbSize} onChange={(e) => handleFxParamChange('B', 'reverb', 'size', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('B', 'reverb', 'size', 0.7)} className="flex-1 h-1 bg-slate-800 rounded appearance-none accent-slate-400 rotate-180" />
+                  <input type="range" min="0" max="1" step="0.01" value={fxB.reverbSize} onChange={(e) => handleFxParamChange('B', 'reverb', 'size', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('B', 'reverb', 'size', 0.7)} className="flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400 rotate-180" />
                 </div>
               </div>
 
               {/* Phaser */}
-              <div className="flex flex-col gap-1.5 sm:gap-2 flex-1">
+              <div className="flex flex-col gap-1.5 sm:gap-2 flex-1 min-w-0">
                 <div className="flex justify-between items-center flex-row-reverse">
                   <span className="text-[9px] sm:text-[10px] font-bold tracking-widest text-fuchsia-400">PHASER</span>
                   <button 
@@ -1067,7 +1039,12 @@ export default function App() {
                 </div>
                 <div className="flex items-center gap-1 sm:gap-2 mt-auto mb-0.5 sm:mb-1 flex-row-reverse">
                   <span className="text-[7px] sm:text-[8px] text-slate-500 w-5 sm:w-7 text-right">RATE</span>
-                  <input type="range" min="0.1" max="10" step="0.1" value={fxB.phaserRate} onChange={(e) => handleFxParamChange('B', 'phaser', 'rate', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('B', 'phaser', 'rate', 0.5)} className="flex-1 h-1 bg-slate-800 rounded appearance-none accent-slate-400 rotate-180" />
+                  <input type="range" min="0.1" max="10" step="0.1" value={fxB.phaserRate} onChange={(e) => handleFxParamChange('B', 'phaser', 'rate', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('B', 'phaser', 'rate', 0.5)} className="flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400 rotate-180" />
+                </div>
+                <div className="flex gap-1 justify-start -mt-1 flex-row-reverse flex-wrap">
+                  <button onClick={() => handleFxParamChange('B', 'phaser', 'rate', Math.min(10, ((bpmB || 120) / 60) * 0.25))} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">4 BARS</button>
+                  <button onClick={() => handleFxParamChange('B', 'phaser', 'rate', Math.min(10, ((bpmB || 120) / 60) * 0.5))} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">2 BARS</button>
+                  <button onClick={() => handleFxParamChange('B', 'phaser', 'rate', Math.min(10, (bpmB || 120) / 60))} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">1 BAR</button>
                 </div>
               </div>
             </div>
@@ -1123,6 +1100,9 @@ export default function App() {
             {activeTab === 'tracks' && (
               <div className="p-4 mt-auto border-t border-slate-800">
                 <div className="flex flex-col gap-2">
+                  <button onClick={handleLoadDirectory} className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white shadow-sm shadow-blue-500/20 rounded text-xs font-medium flex justify-center items-center gap-2 transition">
+                    <FolderSearch size={14} /> Load Library
+                  </button>
                   <button onClick={handlePreScanAll} className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-medium flex justify-center items-center gap-2">
                     <Scan size={14} /> Scan Missing Metadata
                   </button>
