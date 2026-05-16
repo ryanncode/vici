@@ -1,18 +1,29 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as Tone from 'tone';
-import { Play, Square, Music, ArrowLeftSquare, ArrowRightSquare, ToggleLeft, ToggleRight, FolderSearch, FolderOpen, Save, ListMusic, Link, Lock } from 'lucide-react';
+import { Play, Square, Music, ArrowLeftSquare, ArrowRightSquare, ToggleLeft, ToggleRight, FolderSearch, FolderOpen, Save, ListMusic, Link, Lock, Scan } from 'lucide-react';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from './services/Database';
+import { metadataScanner } from './services/MetadataScanner';
 import { AudioEngine } from './services/AudioEngine';
 import { useAutoMixer } from './hooks/useAutoMixer';
 import { loadLocalDirectory, createTrackUrl } from './services/FileManager';
 import { parseM3U, generateM3U } from './utils/m3uParser';
-import type { Track } from './types/mixer';
+import type { Track, TrackMetadata } from './types/mixer';
 
 // Mock Library Data for Verification
 const MOCK_LIBRARY: Track[] = [
-  { id: '1', title: 'Deep House Groove', artist: 'Lofi Core', bpm: 122, duration: '05:24', url: 'https://actions.google.com/sounds/v1/science_fiction/ambient_space_machine.ogg' },
-  { id: '2', title: 'Synthwave Driver', artist: 'Retro Future', bpm: 118, duration: '04:12', url: 'https://actions.google.com/sounds/v1/science_fiction/retro_teleport.ogg' },
-  { id: '3', title: 'Cosmic Journey', artist: 'Space Beats', bpm: 124, duration: '03:45', url: 'https://actions.google.com/sounds/v1/science_fiction/force_field_loop.ogg' },
+  { id: '1', title: 'Deep House Groove', artist: 'Lofi Core', album: 'Chill Vibes Vol 1', year: 2023, genre: 'Deep House', key: 'Am', fileType: 'OGG', bitrate: 320000, bpm: 122, duration: '05:24', url: 'https://actions.google.com/sounds/v1/science_fiction/ambient_space_machine.ogg' },
+  { id: '2', title: 'Synthwave Driver', artist: 'Retro Future', album: 'Night Drive', year: 2021, genre: 'Synthwave', key: 'Fm', fileType: 'OGG', bitrate: 256000, bpm: 118, duration: '04:12', url: 'https://actions.google.com/sounds/v1/science_fiction/retro_teleport.ogg' },
+  { id: '3', title: 'Cosmic Journey', artist: 'Space Beats', album: 'Galaxy', year: 2024, genre: 'Ambient', key: 'C', fileType: 'OGG', bitrate: 192000, bpm: 124, duration: '03:45', url: 'https://actions.google.com/sounds/v1/science_fiction/force_field_loop.ogg' },
 ];
+
+const formatDuration = (seconds: number | string) => {
+  if (typeof seconds === 'string') return seconds;
+  if (!seconds || isNaN(seconds)) return '--:--';
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
 
 export default function App() {
   const [library, setLibrary] = useState<Track[]>(MOCK_LIBRARY);
@@ -47,6 +58,9 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'tracks' | 'playlists'>('tracks');
   const [dragActive, setDragActive] = useState(false);
   
+  const dbTracks = useLiveQuery(() => db.tracks.toArray()) || [];
+  const displayTracks: (Track | TrackMetadata)[] = activeTab === 'tracks' ? dbTracks : library;
+
   const [mixerHeightPct, setMixerHeightPct] = useState(50);
   const [isLibraryMaximized, setIsLibraryMaximized] = useState(false);
   const dragRef = useRef<boolean>(false);
@@ -100,16 +114,25 @@ export default function App() {
       try {
         const handles = await loadLocalDirectory();
         if (handles.length > 0) {
-          const newTracks: Track[] = handles.map((handle, i) => ({
-            id: `local-${Date.now()}-${i}`,
+          const newTracks: TrackMetadata[] = handles.map((handle, i) => ({
+            id: `temp-${Date.now()}-${i}`,
+            filePath: handle.name,
+            fileName: handle.name,
             title: handle.name.replace(/\.[^/.]+$/, ""),
-            artist: 'Local File',
+            artist: 'Unknown Artist',
             bpm: 120,
-            duration: '--:--',
-            url: '', 
+            duration: 0,
             fileHandle: handle
           }));
-          setLibrary(newTracks);
+          
+          await db.tracks.bulkPut(newTracks);
+          
+          // Background scan
+          handles.forEach(handle => {
+            metadataScanner.scanFileHandle(handle);
+          });
+          
+          setActiveTab('tracks');
           return;
         }
       } catch (e) {
@@ -135,21 +158,44 @@ export default function App() {
       artist: 'Local File',
       bpm: 120,
       duration: '--:--',
-      url: URL.createObjectURL(file)
+      url: URL.createObjectURL(file),
+      rawFile: file
     }));
     
-    setLibrary(newTracks);
+    setLibrary(prev => [...prev, ...newTracks]);
+    setActiveTab('playlists');
+  };
+
+  const handlePreScanAll = () => {
+    const unscannedDb = dbTracks.filter(t => t.fileHandle && !t.isScanned);
+    unscannedDb.forEach(t => {
+      if (t.fileHandle) {
+        metadataScanner.scanFileHandle(t.fileHandle, t.filePath);
+      }
+    });
+
+    const unscannedLibrary = library.filter(t => t.rawFile && (!('isScanned' in t) || !(t as unknown as TrackMetadata).isScanned));
+    unscannedLibrary.forEach(t => {
+      if (t.rawFile) {
+        metadataScanner.scanFileHandle(undefined, t.rawFile.name, t.rawFile).then(scanned => {
+          setLibrary(prev => prev.map(lt => lt.id === t.id ? { ...lt, ...scanned, duration: formatDuration(scanned.duration) } : lt));
+        }).catch(console.error);
+      }
+    });
   };
 
   const applyM3U = (content: string) => {
     const paths = parseM3U(content);
     const newLibrary = paths.map(path => {
       const filename = path.split('\\').pop()?.split('/').pop();
+      const dbMatch = dbTracks.find(t => t.fileName === filename || t.filePath === path);
+      if (dbMatch) return dbMatch as unknown as Track;
       return library.find(t => t.fileHandle?.name === filename || t.title === filename || t.url === path);
     }).filter(Boolean) as Track[];
     
     if (newLibrary.length > 0) {
       setLibrary(newLibrary);
+      setActiveTab('playlists');
     } else {
       alert('No matching files found. Load the directory containing these audio files first.');
     }
@@ -227,16 +273,37 @@ export default function App() {
     }
   };
 
-  const handleLoadTrack = async (track: Track, deckId: 'A' | 'B') => {
+  const handleLoadTrack = async (inputTrack: Track | TrackMetadata, deckId: 'A' | 'B') => {
     try {
       const engine = AudioEngine.getInstance();
       if (Tone.context.state !== 'running') {
         await Tone.start();
       }
 
+      let track = inputTrack as Track;
+
+      const needsScan = !('isScanned' in inputTrack) || !inputTrack.isScanned;
+
+      if (needsScan && (inputTrack.fileHandle || inputTrack.rawFile)) {
+        try {
+          const filePath = ('filePath' in inputTrack) ? inputTrack.filePath : (inputTrack.fileHandle?.name || inputTrack.rawFile?.name);
+          const scanned = await metadataScanner.scanFileHandle(inputTrack.fileHandle, filePath, inputTrack.rawFile);
+          track = { ...(scanned as unknown as Track), url: (inputTrack as Track).url };
+        } catch (e) {
+          console.error("Failed to scan metadata before load:", e);
+        }
+      }
+
       let trackUrl = track.url;
       if (track.fileHandle && !trackUrl) {
+        if (await track.fileHandle.queryPermission({ mode: 'read' }) === 'prompt') {
+          await track.fileHandle.requestPermission({ mode: 'read' });
+        }
         trackUrl = await createTrackUrl(track.fileHandle);
+      }
+
+      if (typeof track.duration === 'number') {
+        track = { ...track, duration: formatDuration(track.duration) };
       }
 
       if (deckId === 'A') {
@@ -523,6 +590,16 @@ export default function App() {
                 <div className="overflow-hidden">
                   <h2 className="text-lg font-bold text-white truncate w-48">{deckA.track?.title || 'No Track'}</h2>
                   <p className="text-sm text-slate-400 truncate">{deckA.track?.artist || 'Ready to load'}</p>
+                  {deckA.track && (
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-[10px] text-slate-500 font-mono leading-tight">
+                      {deckA.track.album && <span><span className="text-slate-600">ALB:</span> {deckA.track.album}</span>}
+                      {deckA.track.year && <span><span className="text-slate-600">YR:</span> {deckA.track.year}</span>}
+                      {deckA.track.genre && <span><span className="text-slate-600">GEN:</span> {deckA.track.genre}</span>}
+                      {deckA.track.key && <span><span className="text-slate-600">KEY:</span> {deckA.track.key}</span>}
+                      {deckA.track.fileType && <span><span className="text-slate-600">FMT:</span> {deckA.track.fileType}</span>}
+                      {deckA.track.bitrate && <span><span className="text-slate-600">KBPS:</span> {Math.round(deckA.track.bitrate / 1000)}</span>}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="text-right">
@@ -701,6 +778,16 @@ export default function App() {
                 <div className="overflow-hidden">
                   <h2 className="text-lg font-bold text-white truncate w-48 text-right">{deckB.track?.title || 'No Track'}</h2>
                   <p className="text-sm text-slate-400 truncate text-right">{deckB.track?.artist || 'Ready to load'}</p>
+                  {deckB.track && (
+                    <div className="flex flex-wrap justify-end gap-x-3 gap-y-1 mt-1 text-[10px] text-slate-500 font-mono leading-tight">
+                      {deckB.track.album && <span><span className="text-slate-600">ALB:</span> {deckB.track.album}</span>}
+                      {deckB.track.year && <span><span className="text-slate-600">YR:</span> {deckB.track.year}</span>}
+                      {deckB.track.genre && <span><span className="text-slate-600">GEN:</span> {deckB.track.genre}</span>}
+                      {deckB.track.key && <span><span className="text-slate-600">KEY:</span> {deckB.track.key}</span>}
+                      {deckB.track.fileType && <span><span className="text-slate-600">FMT:</span> {deckB.track.fileType}</span>}
+                      {deckB.track.bitrate && <span><span className="text-slate-600">KBPS:</span> {Math.round(deckB.track.bitrate / 1000)}</span>}
+                    </div>
+                  )}
                 </div>
                 <div className="w-12 h-12 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-blue-500 font-black text-xl">B</div>
               </div>
@@ -846,6 +933,17 @@ export default function App() {
               </div>
             </div>
 
+            {/* Tracks Context Menu */}
+            {activeTab === 'tracks' && (
+              <div className="p-4 mt-auto border-t border-slate-800">
+                <div className="flex flex-col gap-2">
+                  <button onClick={handlePreScanAll} className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-medium flex justify-center items-center gap-2">
+                    <Scan size={14} /> Scan Missing Metadata
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* M3U Context Menu */}
             {activeTab === 'playlists' && (
               <div className="p-4" onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop}>
@@ -874,17 +972,17 @@ export default function App() {
               <div className="text-center">LOAD</div>
             </div>
             <div className="flex flex-col mt-2">
-              {library.length === 0 ? (
+              {displayTracks.length === 0 ? (
                 <div className="flex items-center justify-center h-48 text-slate-500 text-sm">
-                  The active queue is empty. Load a directory or playlist.
+                  {activeTab === 'playlists' ? 'The active queue is empty. Load a directory or playlist.' : 'The database is empty. Load a directory.'}
                 </div>
               ) : (
-                library.map((track) => (
+                displayTracks.map((track) => (
                   <div key={track.id} className="grid grid-cols-[1fr_1fr_80px_80px_100px] gap-4 px-4 py-2 hover:bg-slate-800/50 rounded-md items-center group transition">
                     <div className="font-medium text-sm text-slate-200 truncate">{track.title}</div>
                     <div className="text-xs text-slate-400 truncate">{track.artist}</div>
                     <div className="font-mono text-xs text-slate-400">{track.bpm}</div>
-                    <div className="font-mono text-xs text-slate-400">{track.duration}</div>
+                    <div className="font-mono text-xs text-slate-400">{typeof track.duration === 'number' ? formatDuration(track.duration) : track.duration}</div>
                     <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button onClick={() => handleLoadTrack(track, 'A')} className="p-1.5 bg-slate-800 hover:bg-blue-600 hover:text-white text-slate-400 rounded transition" title="Load to Deck A">
                         <ArrowLeftSquare size={16} />

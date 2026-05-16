@@ -1,73 +1,61 @@
-# React + TypeScript + Vite
+# Vici Pro
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Vici Pro is a high-performance, web-based dual-deck DJ auto-mixing application. Built with React, TypeScript, and the Web Audio API (via Tone.js), Vici acts as an autonomous virtual DJ, allowing users to load local music directories, organize playlists, manipulate audio in real-time, and let the engine seamlessly crossfade between tracks completely hands-free.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Dual-Deck Architecture:** Independent 'Deck A' and 'Deck B' modules with dedicated `Tone.Player` instances routed into a master `Tone.CrossFade` node.
+- **Parametric EQ & Filters:** Each deck features dedicated 3-band EQ processing (-24dB to +6dB for High/Mid/Low) and a bipolar DJ-style macro filter (Lowpass on the left, Highpass on the right).
+- **Dub & Techno FX Bay:** Each deck features a dedicated FX unit with an analog-style Tape Echo (adjustable Time and Feedback) and a cavernous Reverb (adjustable Size).
+- **Pitch & Tempo Control:** Decks include ±16% pitch faders. Changes to playback rate dynamically adjust a sub-millisecond offset tracker to ensure visually smooth seekbar tracking.
+- **Sync & Master Lock:** Click `SYNC` to match the opposite deck's tempo instantly, or hold it to lock into continuous tracking mode. Assigning a deck as `MASTER` forces the secondary deck to mathematically mirror all tempo fluctuations.
+- **Playback Tracking:** Native seekbars allow users to drag the playback position in real-time. Live BPM and track duration are continuously polled.
+- **Automix Supervisor:** A high-frequency polling loop monitors active track lengths. When a track reaches its final 15 seconds, the engine initiates a synchronized crossfade into the standby deck and queues the next track from the library.
+- **Local File Management:** Utilizes the desktop-class `window.showDirectoryPicker` to recursively read local audio folders into the browser without uploading. Includes fallbacks for restricted iframe environments.
+- **M3U Playlist Support:** Import and export `.m3u` or `.m3u8` playlists to instantly queue up specific sets of tracks.
 
-## React Compiler
+## Software Stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **Framework:** React 18 (Vite)
+- **Language:** TypeScript
+- **Styling:** Tailwind CSS + Lucide React (Icons)
+- **Audio Engine:** Web Audio API via `Tone.js`
 
-## Expanding the ESLint configuration
+## Getting Started
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### Prerequisites
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+- [Node.js](https://nodejs.org/) (v16 or higher recommended)
+- npm or yarn
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+### Installation
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/vici.git
+   cd vici
+   ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+3. Start the development server:
+   ```bash
+   npm run dev
+   ```
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+4. Open your browser and navigate to `http://localhost:5173`.
+
+## Usage
+
+1. Click **Load Library** in the top right to select a local folder containing your audio files.
+2. The browser panel at the bottom will populate with your tracks.
+3. Click the left or right arrow buttons next to a track to load it into Deck A or Deck B.
+4. Use the play buttons, EQ, filters, pitch faders, and FX to mix manually.
+5. Toggle **Automix Mode** in the header to let the engine take over crossfading and queuing automatically.
+
+## License
+
+MIT License.

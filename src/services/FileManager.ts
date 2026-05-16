@@ -6,6 +6,8 @@ export interface FileSystemHandle {
 export interface FileSystemFileHandle extends FileSystemHandle {
   kind: 'file';
   getFile(): Promise<File>;
+  queryPermission(descriptor: { mode: 'read' | 'readwrite' }): Promise<'granted' | 'denied' | 'prompt'>;
+  requestPermission(descriptor: { mode: 'read' | 'readwrite' }): Promise<'granted' | 'denied' | 'prompt'>;
 }
 
 export interface FileSystemDirectoryHandle extends FileSystemHandle {
