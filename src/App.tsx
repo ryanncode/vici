@@ -60,9 +60,10 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<'tracks' | 'playlists'>('tracks');
   const [dragActive, setDragActive] = useState(false);
+  const [sessionStarted, setSessionStarted] = useState(false);
   
   const dbTracks = useLiveQuery(() => db.tracks.toArray()) || [];
-  const displayTracks: (Track | TrackMetadata)[] = activeTab === 'tracks' ? dbTracks : library;
+  const displayTracks: (Track | TrackMetadata)[] = activeTab === 'tracks' ? (sessionStarted ? dbTracks : []) : library;
 
   const [mixerHeightPct, setMixerHeightPct] = useState(65);
   const [isLibraryMaximized, setIsLibraryMaximized] = useState(false);
@@ -74,11 +75,11 @@ export default function App() {
   const handleTransitionComplete = (winningDeck: 'A' | 'B', nextTrack: Track, isFromLibrary: boolean) => {
     const engine = AudioEngine.getInstance();
     if (winningDeck === 'A') {
-      setDeckA(prev => ({ ...prev, track: nextTrack, isPlaying: true, introMarker: prev.introMarker || 0, outroMarker: engine.deckA.player.buffer ? Math.max(0, engine.deckA.player.buffer.duration - 15) : 0, peaks: engine.deckA.peaks }));
+      setDeckA(prev => ({ ...prev, track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || (engine.deckA.player.buffer ? Math.max(0, engine.deckA.player.buffer.duration - 15) : 0), peaks: nextTrack.waveformPeaks || engine.deckA.peaks }));
       setDeckB(prev => ({ ...prev, isPlaying: false }));
       setXfade(0);
     } else {
-      setDeckB(prev => ({ ...prev, track: nextTrack, isPlaying: true, introMarker: prev.introMarker || 0, outroMarker: engine.deckB.player.buffer ? Math.max(0, engine.deckB.player.buffer.duration - 15) : 0, peaks: engine.deckB.peaks }));
+      setDeckB(prev => ({ ...prev, track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || (engine.deckB.player.buffer ? Math.max(0, engine.deckB.player.buffer.duration - 15) : 0), peaks: nextTrack.waveformPeaks || engine.deckB.peaks }));
       setDeckA(prev => ({ ...prev, isPlaying: false }));
       setXfade(1);
     }
@@ -90,9 +91,9 @@ export default function App() {
   const handleTransitionStart = (winningDeck: 'A' | 'B', nextTrack: Track) => {
     const engine = AudioEngine.getInstance();
     if (winningDeck === 'A') {
-      setDeckA(prev => ({ ...prev, track: nextTrack, isPlaying: true, introMarker: prev.introMarker || 0, outroMarker: engine.deckA.player.buffer ? Math.max(0, engine.deckA.player.buffer.duration - 15) : 0, peaks: engine.deckA.peaks }));
+      setDeckA(prev => ({ ...prev, track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || (engine.deckA.player.buffer ? Math.max(0, engine.deckA.player.buffer.duration - 15) : 0), peaks: nextTrack.waveformPeaks || engine.deckA.peaks }));
     } else {
-      setDeckB(prev => ({ ...prev, track: nextTrack, isPlaying: true, introMarker: prev.introMarker || 0, outroMarker: engine.deckB.player.buffer ? Math.max(0, engine.deckB.player.buffer.duration - 15) : 0, peaks: engine.deckB.peaks }));
+      setDeckB(prev => ({ ...prev, track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || (engine.deckB.player.buffer ? Math.max(0, engine.deckB.player.buffer.duration - 15) : 0), peaks: nextTrack.waveformPeaks || engine.deckB.peaks }));
     }
   };
 
@@ -134,6 +135,44 @@ export default function App() {
     return () => clearInterval(interval);
   }, [isAutomixEnabled]);
 
+  // Debounced cache update for Deck A settings (peaks, intro, outro)
+  useEffect(() => {
+    if (!deckA.track || (!deckA.peaks && deckA.introMarker === 0 && deckA.outroMarker === 0)) return;
+    
+    const trackId = deckA.track.id;
+    const intro = deckA.introMarker;
+    const outro = deckA.outroMarker;
+    const peaks = deckA.peaks;
+    
+    const timeout = setTimeout(() => {
+      db.tracks.update(trackId, {
+        waveformPeaks: peaks || undefined,
+        introMarker: intro,
+        outroMarker: outro
+      }).catch(console.error);
+    }, 1000);
+    return () => clearTimeout(timeout);
+  }, [deckA.track?.id, deckA.peaks, deckA.introMarker, deckA.outroMarker]);
+
+  // Debounced cache update for Deck B settings
+  useEffect(() => {
+    if (!deckB.track || (!deckB.peaks && deckB.introMarker === 0 && deckB.outroMarker === 0)) return;
+    
+    const trackId = deckB.track.id;
+    const intro = deckB.introMarker;
+    const outro = deckB.outroMarker;
+    const peaks = deckB.peaks;
+    
+    const timeout = setTimeout(() => {
+      db.tracks.update(trackId, {
+        waveformPeaks: peaks || undefined,
+        introMarker: intro,
+        outroMarker: outro
+      }).catch(console.error);
+    }, 1000);
+    return () => clearTimeout(timeout);
+  }, [deckB.track?.id, deckB.peaks, deckB.introMarker, deckB.outroMarker]);
+
   const handleLoadDirectory = async () => {
     if ('showDirectoryPicker' in window) {
       try {
@@ -157,6 +196,7 @@ export default function App() {
             metadataScanner.scanFileHandle(handle);
           });
           
+          setSessionStarted(true);
           setActiveTab('tracks');
           return;
         }
@@ -177,18 +217,20 @@ export default function App() {
       return;
     }
 
-    const newTracks: Track[] = audioFiles.map((file, i) => ({
+    const newTracks: TrackMetadata[] = audioFiles.map((file, i) => ({
       id: `fallback-${Date.now()}-${i}`,
+      filePath: file.name,
+      fileName: file.name,
       title: file.name.replace(/\.[^/.]+$/, ""),
       artist: 'Local File',
       bpm: 120,
-      duration: '--:--',
-      url: URL.createObjectURL(file),
+      duration: 0,
       rawFile: file
     }));
     
-    setLibrary(prev => [...prev, ...newTracks]);
-    setActiveTab('playlists');
+    db.tracks.bulkPut(newTracks).catch(console.error);
+    setSessionStarted(true);
+    setActiveTab('tracks');
   };
 
   const handlePreScanAll = () => {
@@ -325,6 +367,8 @@ export default function App() {
           await track.fileHandle.requestPermission({ mode: 'read' });
         }
         trackUrl = await createTrackUrl(track.fileHandle);
+      } else if (!trackUrl && track.rawFile) {
+        trackUrl = URL.createObjectURL(track.rawFile);
       }
 
       if (typeof track.duration === 'number') {
@@ -338,7 +382,11 @@ export default function App() {
         engine.deckA.setTrackGainDb(track.replayGain || 0);
         setPitchA(1.0);
         engine.deckA.setPlaybackRate(1.0);
-        setDeckA(prev => ({ ...prev, peaks: engine.deckA.peaks, introMarker: 0, outroMarker: engine.deckA.player.buffer ? Math.max(0, engine.deckA.player.buffer.duration - 15) : 0 }));
+        
+        const intro = track.introMarker !== undefined ? track.introMarker : 0;
+        const outro = track.outroMarker !== undefined ? track.outroMarker : (engine.deckA.player.buffer ? Math.max(0, engine.deckA.player.buffer.duration - 15) : 0);
+        
+        setDeckA(prev => ({ ...prev, peaks: track.waveformPeaks || engine.deckA.peaks, introMarker: intro, outroMarker: outro }));
       } else {
         setDeckB(prev => ({ ...prev, track }));
         await engine.deckB.loadTrack(trackUrl);
@@ -346,7 +394,11 @@ export default function App() {
         engine.deckB.setTrackGainDb(track.replayGain || 0);
         setPitchB(1.0);
         engine.deckB.setPlaybackRate(1.0);
-        setDeckB(prev => ({ ...prev, peaks: engine.deckB.peaks, introMarker: 0, outroMarker: engine.deckB.player.buffer ? Math.max(0, engine.deckB.player.buffer.duration - 15) : 0 }));
+
+        const intro = track.introMarker !== undefined ? track.introMarker : 0;
+        const outro = track.outroMarker !== undefined ? track.outroMarker : (engine.deckB.player.buffer ? Math.max(0, engine.deckB.player.buffer.duration - 15) : 0);
+
+        setDeckB(prev => ({ ...prev, peaks: track.waveformPeaks || engine.deckB.peaks, introMarker: intro, outroMarker: outro }));
       }
     } catch (err) {
       console.error("Audio load error:", err);
@@ -1096,19 +1148,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Tracks Context Menu */}
-            {activeTab === 'tracks' && (
-              <div className="p-4 mt-auto border-t border-slate-800">
-                <div className="flex flex-col gap-2">
-                  <button onClick={handleLoadDirectory} className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white shadow-sm shadow-blue-500/20 rounded text-xs font-medium flex justify-center items-center gap-2 transition">
-                    <FolderSearch size={14} /> Load Library
-                  </button>
-                  <button onClick={handlePreScanAll} className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-medium flex justify-center items-center gap-2">
-                    <Scan size={14} /> Scan Missing Metadata
-                  </button>
-                </div>
-              </div>
-            )}
+            {/* Tracks Context Menu (Empty to remove sidebar buttons) */}
 
             {/* M3U Context Menu */}
             {activeTab === 'playlists' && (
@@ -1129,18 +1169,38 @@ export default function App() {
           </div>
 
           {/* Data Table */}
-          <div className="flex-1 overflow-auto bg-slate-900/80 p-2 sm:p-4">
-            <div className="grid grid-cols-[1fr_1fr_80px_80px_100px] gap-4 px-4 py-2 border-b border-slate-800 text-xs font-bold text-slate-500 tracking-wider">
+          <div className="flex-1 overflow-auto bg-slate-900/80 p-2 sm:p-4 flex flex-col">
+            {/* Library Action Bar */}
+            {activeTab === 'tracks' && (
+              <div className="flex justify-start gap-3 mb-3">
+                <button onClick={handleLoadDirectory} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white shadow-sm shadow-blue-500/20 rounded text-xs font-medium flex justify-center items-center gap-2 transition">
+                  <FolderSearch size={14} /> Load Library
+                </button>
+                {sessionStarted && (
+                  <button onClick={handlePreScanAll} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-medium flex justify-center items-center gap-2 transition">
+                    <Scan size={14} /> Scan Missing Metadata
+                  </button>
+                )}
+                {!sessionStarted && dbTracks.length > 0 && (
+                  <button onClick={() => setSessionStarted(true)} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-medium flex justify-center items-center gap-2 transition">
+                    Restore Previous Session ({dbTracks.length} tracks)
+                  </button>
+                )}
+              </div>
+            )}
+
+            <div className="grid grid-cols-[1fr_1fr_80px_80px_100px] gap-4 px-4 py-2 border-b border-slate-800 text-xs font-bold text-slate-500 tracking-wider shrink-0">
               <div>TITLE</div>
               <div>ARTIST</div>
               <div>BPM</div>
               <div>TIME</div>
               <div className="text-center">LOAD</div>
             </div>
-            <div className="flex flex-col mt-2">
+            <div className="flex flex-col mt-2 flex-1 overflow-auto">
               {displayTracks.length === 0 ? (
-                <div className="flex items-center justify-center h-48 text-slate-500 text-sm">
-                  {activeTab === 'playlists' ? 'The active queue is empty. Load a directory or playlist.' : 'The database is empty. Load a directory.'}
+                <div className="flex flex-col items-center justify-center h-48 text-slate-500 text-sm gap-2">
+                  <p>{activeTab === 'playlists' ? 'The active queue is empty. Load a directory or playlist.' : 'The track view is empty.'}</p>
+                  {activeTab === 'tracks' && !sessionStarted && dbTracks.length === 0 && <p className="text-xs text-slate-600">Use "Load Library" to add your local audio folders.</p>}
                 </div>
               ) : (
                 displayTracks.map((track) => (

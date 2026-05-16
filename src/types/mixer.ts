@@ -19,6 +19,8 @@ export interface TrackMetadata {
   // Non-indexed properties
   albumArt?: Blob;
   waveformPeaks?: Float32Array;
+  introMarker?: number;
+  outroMarker?: number;
   fileHandle?: FileSystemFileHandle;
   rawFile?: File; // Fallback HTML5 File
 }
@@ -37,6 +39,9 @@ export interface Track {
   duration: string;
   replayGain?: number;
   url: string; // Dynamic Object URL or local asset path
+  waveformPeaks?: Float32Array;
+  introMarker?: number;
+  outroMarker?: number;
   fileHandle?: FileSystemFileHandle; // FileSystemFileHandle
   rawFile?: File; // Fallback HTML5 File
 }
