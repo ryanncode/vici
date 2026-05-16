@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import * as Tone from 'tone';
 import { AudioEngine } from '../services/AudioEngine';
 import { useMixerStore } from '../store/mixerStore';
@@ -7,6 +8,28 @@ import { metadataScanner } from '../services/MetadataScanner';
 
 export function useDeckControl(deckId: 'A' | 'B') {
   const setDeckState = useMixerStore(state => state.setDeckState);
+  const lastStateUpdateRef = useRef<{ [key: string]: number }>({});
+  const dspThrottleRef = useRef<{ [key: string]: number }>({});
+  const dspTimeoutRef = useRef<{ [key: string]: ReturnType<typeof setTimeout> }>({});
+
+  const throttledDSP = (key: string, fn: () => void, delay = 32) => {
+    const now = Date.now();
+    const lastUpdate = dspThrottleRef.current[key] || 0;
+    
+    if (dspTimeoutRef.current[key]) {
+      clearTimeout(dspTimeoutRef.current[key]);
+    }
+
+    if (now - lastUpdate >= delay) {
+      fn();
+      dspThrottleRef.current[key] = now;
+    } else {
+      dspTimeoutRef.current[key] = setTimeout(() => {
+        fn();
+        dspThrottleRef.current[key] = Date.now();
+      }, delay);
+    }
+  };
   
   const loadTrack = async (inputTrack: Track | TrackMetadata) => {
     try {
@@ -87,9 +110,11 @@ export function useDeckControl(deckId: 'A' | 'B') {
   };
 
   const setVolume = (value: number) => {
-    const engine = AudioEngine.getInstance();
-    const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
-    deckEngine.setChannelVolume(value);
+    throttledDSP(`vol-${deckId}`, () => {
+      const engine = AudioEngine.getInstance();
+      const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
+      deckEngine.setChannelVolume(value);
+    });
     setDeckState(deckId, { volume: value });
   };
   
@@ -110,8 +135,16 @@ export function useDeckControl(deckId: 'A' | 'B') {
       finalPitch = snappedBpm / deckEngine.originalBpm;
     }
     
-    deckEngine.setPlaybackRate(finalPitch);
-    setDeckState(deckId, { pitch: finalPitch });
+    throttledDSP(`pitch-${deckId}`, () => {
+      deckEngine.setPlaybackRate(finalPitch);
+    });
+    
+    const now = Date.now();
+    const lastUpdate = lastStateUpdateRef.current['pitch'] || 0;
+    if (now - lastUpdate > 200) {
+      setDeckState(deckId, { pitch: finalPitch });
+      lastStateUpdateRef.current['pitch'] = now;
+    }
     
     const store = useMixerStore.getState();
     const otherDeckId = deckId === 'A' ? 'B' : 'A';
@@ -220,20 +253,25 @@ export function useDeckControl(deckId: 'A' | 'B') {
     const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
     const store = useMixerStore.getState();
     
+    const now = Date.now();
+    const key = `fx-${fxType}-${param}`;
+    const lastUpdate = lastStateUpdateRef.current[key] || 0;
+    const shouldUpdateStore = now - lastUpdate > 200;
+    
     if (fxType === 'delay') {
       if (param === 'time') {
-        store.setDeckFx(deckId, { delayTime: value });
-        deckEngine.setDelayTime(value);
+        if (shouldUpdateStore) { store.setDeckFx(deckId, { delayTime: value }); lastStateUpdateRef.current[key] = now; }
+        throttledDSP(`fx-${deckId}-delayTime`, () => deckEngine.setDelayTime(value));
       } else if (param === 'feedback') {
-        store.setDeckFx(deckId, { delayFeedback: value });
-        deckEngine.setDelayFeedback(value);
+        if (shouldUpdateStore) { store.setDeckFx(deckId, { delayFeedback: value }); lastStateUpdateRef.current[key] = now; }
+        throttledDSP(`fx-${deckId}-delayFB`, () => deckEngine.setDelayFeedback(value));
       }
     } else if (fxType === 'reverb' && param === 'size') {
-      store.setDeckFx(deckId, { reverbSize: value });
-      deckEngine.setReverbSize(value);
+      if (shouldUpdateStore) { store.setDeckFx(deckId, { reverbSize: value }); lastStateUpdateRef.current[key] = now; }
+      throttledDSP(`fx-${deckId}-revSize`, () => deckEngine.setReverbSize(value));
     } else if (fxType === 'phaser' && param === 'rate') {
-      store.setDeckFx(deckId, { phaserRate: value });
-      deckEngine.setPhaserRate(value);
+      if (shouldUpdateStore) { store.setDeckFx(deckId, { phaserRate: value }); lastStateUpdateRef.current[key] = now; }
+      throttledDSP(`fx-${deckId}-phaseRate`, () => deckEngine.setPhaserRate(value));
     }
   };
 

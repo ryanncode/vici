@@ -23,7 +23,7 @@ const DeckBpmText = ({ deckId }: { deckId: 'A' | 'B' }) => {
         const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
         const bpmStr = (deckEngine.player.loaded && deckEngine.currentBpm > 0) ? deckEngine.currentBpm.toFixed(1) : '---';
         if (bpmStr !== lastBpmStr) {
-          bpmRef.current.innerText = bpmStr;
+          bpmRef.current.textContent = bpmStr;
           lastBpmStr = bpmStr;
         }
       }
@@ -36,9 +36,9 @@ const DeckBpmText = ({ deckId }: { deckId: 'A' | 'B' }) => {
 };
 
 const DeckProgressText = ({ deckId, pitch, isLeft, introMarker, outroMarker, trackKey }: { deckId: 'A' | 'B', pitch: number, isLeft: boolean, introMarker: number, outroMarker: number, trackKey?: string }) => {
-  const timeRef = useRef<HTMLSpanElement>(null);
-  const inRef = useRef<HTMLSpanElement>(null);
-  const outRef = useRef<HTMLSpanElement>(null);
+  const timeValRef = useRef<HTMLSpanElement>(null);
+  const inValRef = useRef<HTMLSpanElement>(null);
+  const outValRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
     let lastTimeStr = '';
@@ -51,24 +51,24 @@ const DeckProgressText = ({ deckId, pitch, isLeft, introMarker, outroMarker, tra
       const current = deckEngine.getCurrentTime();
       const duration = deckEngine.player.buffer?.duration || 0;
       
-      if (timeRef.current) {
+      if (timeValRef.current) {
         const timeStr = `${formatAdjustedTime(current, pitch)} / ${formatAdjustedTime(duration, pitch)}`;
         if (timeStr !== lastTimeStr) {
-          timeRef.current.innerHTML = `<span class="text-slate-500">${isLeft ? 'TIME:' : ''}</span> ${timeStr} <span class="text-slate-500">${!isLeft ? ':TIME' : ''}</span>`;
+          timeValRef.current.textContent = timeStr;
           lastTimeStr = timeStr;
         }
       }
-      if (inRef.current) {
+      if (inValRef.current) {
         const inStr = formatAdjustedTime(introMarker, pitch);
         if (inStr !== lastInStr) {
-          inRef.current.innerHTML = `<span class="text-slate-500">${isLeft ? 'IN:' : ''}</span> ${inStr} <span class="text-slate-500">${!isLeft ? ':IN' : ''}</span>`;
+          inValRef.current.textContent = inStr;
           lastInStr = inStr;
         }
       }
-      if (outRef.current && duration > 0) {
+      if (outValRef.current && duration > 0) {
         const outStr = formatAdjustedTime(duration - outroMarker, pitch);
         if (outStr !== lastOutStr) {
-          outRef.current.innerHTML = `<span class="text-slate-500">${isLeft ? 'OUT:' : ''}</span> ${outStr} <span class="text-slate-500">${!isLeft ? ':OUT' : ''}</span>`;
+          outValRef.current.textContent = outStr;
           lastOutStr = outStr;
         }
       }
@@ -79,9 +79,9 @@ const DeckProgressText = ({ deckId, pitch, isLeft, introMarker, outroMarker, tra
 
   return (
     <div className={`flex gap-2 sm:gap-3 text-[9px] sm:text-[10px] font-mono text-slate-400 ${!isLeft ? 'flex-row-reverse' : ''}`}>
-      <span ref={timeRef}></span>
-      <span ref={inRef} className="hidden sm:inline"></span>
-      <span ref={outRef} className="hidden sm:inline"></span>
+      <span><span className="text-slate-500">{isLeft ? 'TIME:' : ''}</span> <span ref={timeValRef}></span> <span className="text-slate-500">{!isLeft ? ':TIME' : ''}</span></span>
+      <span className="hidden sm:inline"><span className="text-slate-500">{isLeft ? 'IN:' : ''}</span> <span ref={inValRef}></span> <span className="text-slate-500">{!isLeft ? ':IN' : ''}</span></span>
+      <span className="hidden sm:inline"><span className="text-slate-500">{isLeft ? 'OUT:' : ''}</span> <span ref={outValRef}></span> <span className="text-slate-500">{!isLeft ? ':OUT' : ''}</span></span>
       {trackKey && <span className="hidden lg:inline"><span className="text-slate-600">{isLeft ? 'KEY:' : ''}</span> {trackKey} <span className="text-slate-600">{!isLeft ? ':KEY' : ''}</span></span>}
     </div>
   );
@@ -220,9 +220,9 @@ export const Deck = React.memo(function Deck({ deckId }: { deckId: 'A' | 'B' }) 
                 min="0.84" 
                 max="1.16" 
                 step="any" 
-                value={state.pitch} 
+                defaultValue={state.pitch} 
                 onChange={(e) => setPitch(parseFloat(e.target.value))}
-                onDoubleClick={() => setPitch(1.0)}
+                onDoubleClick={(e) => { e.currentTarget.value = '1.0'; setPitch(1.0); }}
                 onWheel={(e) => {
                   e.preventDefault();
                   const now = Date.now();
@@ -272,11 +272,11 @@ export const Deck = React.memo(function Deck({ deckId }: { deckId: 'A' | 'B' }) 
           </div>
           <div className={`flex items-center gap-1 sm:gap-2 ${!isLeft ? 'flex-row-reverse' : ''}`}>
             <span className={`text-[7px] sm:text-[8px] text-slate-500 w-5 sm:w-7 ${!isLeft ? 'text-right' : ''}`}>TIME</span>
-            <input type="range" min="0.05" max="1" step="0.01" value={state.fx.delayTime} onChange={(e) => handleFxParamChange('delay', 'time', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('delay', 'time', 0.25)} onWheel={handleSliderWheel} className={`flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400 ${!isLeft ? 'rotate-180' : ''}`} />
+            <input type="range" min="0.05" max="1" step="0.01" defaultValue={state.fx.delayTime} onChange={(e) => handleFxParamChange('delay', 'time', parseFloat(e.target.value))} onDoubleClick={(e) => { e.currentTarget.value = '0.25'; handleFxParamChange('delay', 'time', 0.25); }} onWheel={handleSliderWheel} className={`flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400 ${!isLeft ? 'rotate-180' : ''}`} />
           </div>
           <div className={`flex items-center gap-1 sm:gap-2 ${!isLeft ? 'flex-row-reverse' : ''}`}>
             <span className={`text-[7px] sm:text-[8px] text-slate-500 w-5 sm:w-7 ${!isLeft ? 'text-right' : ''}`}>FDBK</span>
-            <input type="range" min="0" max="0.95" step="0.01" value={state.fx.delayFeedback} onChange={(e) => handleFxParamChange('delay', 'feedback', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('delay', 'feedback', 0.5)} onWheel={handleSliderWheel} className={`flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400 ${!isLeft ? 'rotate-180' : ''}`} />
+            <input type="range" min="0" max="0.95" step="0.01" defaultValue={state.fx.delayFeedback} onChange={(e) => handleFxParamChange('delay', 'feedback', parseFloat(e.target.value))} onDoubleClick={(e) => { e.currentTarget.value = '0.5'; handleFxParamChange('delay', 'feedback', 0.5); }} onWheel={handleSliderWheel} className={`flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400 ${!isLeft ? 'rotate-180' : ''}`} />
           </div>
           <div className={`flex gap-1 -mt-1 flex-wrap ${isLeft ? 'justify-end' : 'justify-start flex-row-reverse'}`}>
             <button onClick={() => { const bpm = AudioEngine.getInstance()[deckId === 'A' ? 'deckA' : 'deckB'].currentBpm; handleFxParamChange('delay', 'time', Math.min(1, 60 / (bpm || 120))); }} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">1/4</button>
@@ -296,7 +296,7 @@ export const Deck = React.memo(function Deck({ deckId }: { deckId: 'A' | 'B' }) 
           </div>
           <div className={`flex items-center gap-1 sm:gap-2 mt-auto mb-0.5 sm:mb-1 ${!isLeft ? 'flex-row-reverse' : ''}`}>
             <span className={`text-[7px] sm:text-[8px] text-slate-500 w-5 sm:w-7 ${!isLeft ? 'text-right' : ''}`}>SIZE</span>
-            <input type="range" min="0" max="1" step="0.01" value={state.fx.reverbSize} onChange={(e) => handleFxParamChange('reverb', 'size', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('reverb', 'size', 0.7)} onWheel={handleSliderWheel} className={`flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400 ${!isLeft ? 'rotate-180' : ''}`} />
+            <input type="range" min="0" max="1" step="0.01" defaultValue={state.fx.reverbSize} onChange={(e) => handleFxParamChange('reverb', 'size', parseFloat(e.target.value))} onDoubleClick={(e) => { e.currentTarget.value = '0.7'; handleFxParamChange('reverb', 'size', 0.7); }} onWheel={handleSliderWheel} className={`flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400 ${!isLeft ? 'rotate-180' : ''}`} />
           </div>
         </div>
 
@@ -311,7 +311,7 @@ export const Deck = React.memo(function Deck({ deckId }: { deckId: 'A' | 'B' }) 
           </div>
           <div className={`flex items-center gap-1 sm:gap-2 mt-auto mb-0.5 sm:mb-1 ${!isLeft ? 'flex-row-reverse' : ''}`}>
             <span className={`text-[7px] sm:text-[8px] text-slate-500 w-5 sm:w-7 ${!isLeft ? 'text-right' : ''}`}>RATE</span>
-            <input type="range" min="0.1" max="10" step="0.1" value={state.fx.phaserRate} onChange={(e) => handleFxParamChange('phaser', 'rate', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('phaser', 'rate', 0.5)} onWheel={handleSliderWheel} className={`flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400 ${!isLeft ? 'rotate-180' : ''}`} />
+            <input type="range" min="0.1" max="10" step="0.1" defaultValue={state.fx.phaserRate} onChange={(e) => handleFxParamChange('phaser', 'rate', parseFloat(e.target.value))} onDoubleClick={(e) => { e.currentTarget.value = '0.5'; handleFxParamChange('phaser', 'rate', 0.5); }} onWheel={handleSliderWheel} className={`flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400 ${!isLeft ? 'rotate-180' : ''}`} />
           </div>
           <div className={`flex gap-1 -mt-1 flex-wrap ${isLeft ? 'justify-end' : 'justify-start flex-row-reverse'}`}>
             <button onClick={() => { const bpm = AudioEngine.getInstance()[deckId === 'A' ? 'deckA' : 'deckB'].currentBpm; handleFxParamChange('phaser', 'rate', Math.min(10, ((bpm || 120) / 60) * 0.25)); }} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">4 BARS</button>

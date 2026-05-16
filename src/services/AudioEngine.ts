@@ -49,7 +49,7 @@ export class Deck {
       type: "square",
       depth: 1,
       spread: 0
-    }).start();
+    });
     this.gate.wet.value = 0;
 
     // Dub Siren
@@ -63,13 +63,11 @@ export class Deck {
       min: 400,
       max: 800,
       frequency: "8n"
-    }).start();
+    });
     this.sirenLfo.connect(this.sirenSynth.oscillator.frequency);
 
     this.player = new Tone.Player();
     this.player.chain(this.eq, this.filter, this.phaser, this.gate, this.delay, this.reverb, this.volumeNode);
-    this.player.fadeIn = 0.1;
-    this.player.fadeOut = 0.1;
   }
 
   public async loadTrack(url: string): Promise<void> {
@@ -331,22 +329,22 @@ export class Deck {
   }
 
   public setEq(band: 'high' | 'mid' | 'low', value: number): void {
-    this.eq[band].value = value;
+    this.eq[band].setTargetAtTime(value, Tone.context.currentTime, 0.015);
   }
 
   public setFilterColor(value: number): void {
     // Value: -100 (LP) to 100 (HP). 0 is bypass.
     if (value === 0) {
       this.filter.type = "lowpass";
-      this.filter.frequency.value = 20000;
+      this.filter.frequency.setTargetAtTime(20000, Tone.context.currentTime, 0.015);
     } else if (value < 0) {
       this.filter.type = "lowpass";
       const freq = this.mapLog(value + 100, 0, 100, 20, 20000);
-      this.filter.frequency.value = freq;
+      this.filter.frequency.setTargetAtTime(freq, Tone.context.currentTime, 0.015);
     } else {
       this.filter.type = "highpass";
       const freq = this.mapLog(value, 0, 100, 20, 20000);
-      this.filter.frequency.value = freq;
+      this.filter.frequency.setTargetAtTime(freq, Tone.context.currentTime, 0.015);
     }
   }
 
@@ -357,45 +355,59 @@ export class Deck {
 
   // FX Bay Controls
   public setDelayState(isOn: boolean): void {
-    this.delay.wet.value = isOn ? 0.5 : 0;
+    this.delay.wet.setTargetAtTime(isOn ? 0.5 : 0, Tone.context.currentTime, 0.05);
   }
 
   public setDelayFeedback(value: number): void {
-    this.delay.feedback.value = value;
+    this.delay.feedback.setTargetAtTime(value, Tone.context.currentTime, 0.05);
   }
 
   public setDelayTime(timeInSeconds: number): void {
-    this.delay.delayTime.value = timeInSeconds;
+    this.delay.delayTime.setTargetAtTime(timeInSeconds, Tone.context.currentTime, 0.05);
   }
 
   public setReverbState(isOn: boolean): void {
-    this.reverb.wet.value = isOn ? 0.5 : 0;
+    this.reverb.wet.setTargetAtTime(isOn ? 0.5 : 0, Tone.context.currentTime, 0.05);
   }
 
   public setReverbSize(value: number): void {
-    this.reverb.roomSize.value = value;
+    this.reverb.roomSize.setTargetAtTime(value, Tone.context.currentTime, 0.05);
   }
 
   // Phaser
   public setPhaserState(isOn: boolean): void {
-    this.phaser.wet.value = isOn ? 0.8 : 0;
+    this.phaser.wet.setTargetAtTime(isOn ? 0.8 : 0, Tone.context.currentTime, 0.05);
   }
 
   public setPhaserRate(rateHz: number): void {
-    this.phaser.frequency.value = rateHz;
+    this.phaser.frequency.setTargetAtTime(rateHz, Tone.context.currentTime, 0.05);
   }
 
   // Trance Gate
+  private gateStarted: boolean = false;
+  
   public setGateState(isOn: boolean): void {
-    this.gate.wet.value = isOn ? 1 : 0;
+    if (isOn && !this.gateStarted) {
+      this.gate.start();
+      this.gateStarted = true;
+    }
+    this.gate.wet.setTargetAtTime(isOn ? 1 : 0, Tone.context.currentTime, 0.05);
   }
 
   // Dub Siren
   public triggerSiren(isOn: boolean): void {
     if (isOn) {
+      if (this.sirenLfo.state !== "started") {
+        this.sirenLfo.start();
+      }
       this.sirenSynth.triggerAttack("C4");
     } else {
       this.sirenSynth.triggerRelease();
+      if (this.sirenLfo.state === "started") {
+        setTimeout(() => {
+          if (this.sirenLfo.state === "started") this.sirenLfo.stop();
+        }, 1000); // Let release tail finish before stopping LFO
+      }
     }
   }
 
@@ -432,7 +444,9 @@ export class Deck {
     if (totalDb > 12) totalDb = 12;
     if (totalDb < -100) totalDb = -100;
     
-    this.volumeNode.volume.rampTo(totalDb, 0.05);
+    // Use setTargetAtTime for extremely fast, continuous slider dragging.
+    // It avoids bloating Tone.js's internal timeline event arrays compared to rampTo.
+    this.volumeNode.volume.setTargetAtTime(totalDb, Tone.context.currentTime, 0.015);
   }
 
   public setChannelVolume(linearGain: number): void {
@@ -441,6 +455,7 @@ export class Deck {
   }
 
   public setTrackGainDb(db: number): void {
+    if (isNaN(db) || !isFinite(db)) db = 0;
     this.trackGainDb = db;
     this.updateVolume();
   }
@@ -470,6 +485,6 @@ export class AudioEngine {
 
   public setCrossfadeValue(value: number): void {
     // Value range: 0 (Deck A) to 1 (Deck B)
-    this.crossfader.fade.value = value;
+    this.crossfader.fade.setTargetAtTime(value, Tone.context.currentTime, 0.015);
   }
 }

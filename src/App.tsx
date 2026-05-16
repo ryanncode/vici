@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import * as Tone from 'tone';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { AudioEngine } from './services/AudioEngine';
 import { useAutoMixer } from './hooks/useAutoMixer';
@@ -18,6 +19,44 @@ export default function App() {
     onRegistered(r: unknown) { console.log('SW Registered:', r); },
     onRegisterError(error: unknown) { console.error('SW registration error', error); },
   });
+
+  // Tab High-Performance Mode Enforcer & Silent Latency Monitor
+  useEffect(() => {
+    let animId: number;
+    const keepAwake = () => {
+      // This empty rAF loop prevents the browser from putting the tab into Eco/Throttled mode
+      // which causes Web Audio thread starvation (the source of the playback glitches).
+      animId = requestAnimationFrame(keepAwake);
+    };
+    animId = requestAnimationFrame(keepAwake);
+
+    let lastTime = performance.now();
+    let lastAudioTime = Tone.context.currentTime;
+    
+    const interval = setInterval(() => {
+      const now = performance.now();
+      const delta = now - lastTime;
+      
+      if (delta > 50) {
+        console.warn(`[PERF] Main thread blocked for ${Math.round(delta)}ms`);
+      }
+      
+      if (Tone.context.state === 'running') {
+        const audioTime = Tone.context.currentTime;
+        // Only log actual drift > 150ms to avoid spam from grouped timers
+        if (audioTime !== lastAudioTime) {
+          lastAudioTime = audioTime;
+        }
+      }
+      
+      lastTime = now;
+    }, 16);
+    
+    return () => {
+      clearInterval(interval);
+      cancelAnimationFrame(animId);
+    };
+  }, []);
 
   const isAutomixEnabled = useMixerStore(state => state.isAutomixEnabled);
   const deckATrack = useMixerStore(state => state.deckA.track);

@@ -33,33 +33,85 @@ export const MixerConsole = React.memo(function MixerConsole() {
     return () => clearInterval(interval);
   }, [isAutomixEnabled]);
 
+  const lastStateUpdateRef = React.useRef<{ [key: string]: number }>({});
+  const dspThrottleRef = React.useRef<{ [key: string]: number }>({});
+  const dspTimeoutRef = React.useRef<{ [key: string]: ReturnType<typeof setTimeout> }>({});
+
+  const throttledDSP = (key: string, fn: () => void, delay = 32) => {
+    const now = Date.now();
+    const lastUpdate = dspThrottleRef.current[key] || 0;
+    
+    if (dspTimeoutRef.current[key]) {
+      clearTimeout(dspTimeoutRef.current[key]);
+    }
+
+    if (now - lastUpdate >= delay) {
+      fn();
+      dspThrottleRef.current[key] = now;
+    } else {
+      dspTimeoutRef.current[key] = setTimeout(() => {
+        fn();
+        dspThrottleRef.current[key] = Date.now();
+      }, delay);
+    }
+  };
+
+  const throttledSetDeckState = (deckId: 'A' | 'B', key: string, value: number) => {
+    const now = Date.now();
+    const lastUpdate = lastStateUpdateRef.current[`${deckId}-${key}`] || 0;
+    if (now - lastUpdate > 200) {
+      useMixerStore.getState().setDeckState(deckId, { [key]: value });
+      lastStateUpdateRef.current[`${deckId}-${key}`] = now;
+    }
+  };
+
   const handleVolumeChange = (deckId: 'A' | 'B', value: number) => {
-    const engine = AudioEngine.getInstance();
-    const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
-    deckEngine.setChannelVolume(value);
-    useMixerStore.getState().setDeckState(deckId, { volume: value });
+    throttledDSP(`vol-${deckId}`, () => {
+      const engine = AudioEngine.getInstance();
+      const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
+      deckEngine.setChannelVolume(value);
+    });
+    throttledSetDeckState(deckId, 'volume', value);
   };
 
   const handleCrossfadeChange = (e: ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value);
-    useMixerStore.getState().setCrossfade(val);
-    const engine = AudioEngine.getInstance();
-    engine.crossfader.fade.cancelScheduledValues(Tone.now());
-    engine.setCrossfadeValue(val);
+    throttledDSP('crossfade', () => {
+      const engine = AudioEngine.getInstance();
+      engine.crossfader.fade.cancelScheduledValues(Tone.now());
+      engine.setCrossfadeValue(val);
+    });
+    
+    const now = Date.now();
+    const lastUpdate = lastStateUpdateRef.current['crossfade'] || 0;
+    if (now - lastUpdate > 200) {
+      useMixerStore.getState().setCrossfade(val);
+      lastStateUpdateRef.current['crossfade'] = now;
+    }
   };
 
   const handleEqChange = (deckId: 'A' | 'B', band: 'high' | 'mid' | 'low', value: number) => {
-    const engine = AudioEngine.getInstance();
-    const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
-    deckEngine.setEq(band, value);
-    useMixerStore.getState().setDeckEq(deckId, { [band]: value });
+    throttledDSP(`eq-${deckId}-${band}`, () => {
+      const engine = AudioEngine.getInstance();
+      const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
+      deckEngine.setEq(band, value);
+    });
+    
+    const now = Date.now();
+    const lastUpdate = lastStateUpdateRef.current[`${deckId}-eq-${band}`] || 0;
+    if (now - lastUpdate > 200) {
+      useMixerStore.getState().setDeckEq(deckId, { [band]: value });
+      lastStateUpdateRef.current[`${deckId}-eq-${band}`] = now;
+    }
   };
 
   const handleFilterChange = (deckId: 'A' | 'B', value: number) => {
-    const engine = AudioEngine.getInstance();
-    const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
-    deckEngine.setFilterColor(value);
-    useMixerStore.getState().setDeckState(deckId, { filter: value });
+    throttledDSP(`flt-${deckId}`, () => {
+      const engine = AudioEngine.getInstance();
+      const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
+      deckEngine.setFilterColor(value);
+    });
+    throttledSetDeckState(deckId, 'filter', value);
   };
 
   const handleFxToggle = (deckId: 'A' | 'B', fxType: 'gate' | 'roll' | 'siren') => {
