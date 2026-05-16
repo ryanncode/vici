@@ -1,20 +1,23 @@
 import { useEffect, useRef } from 'react';
+import * as Tone from 'tone';
 import { AudioEngine } from '../services/AudioEngine';
 import { createTrackUrl } from '../services/FileManager';
 import type { Track } from '../types/mixer';
 
 interface AutoMixerProps {
-  deckAState: { track: Track | null; isPlaying: boolean };
-  deckBState: { track: Track | null; isPlaying: boolean };
+  deckAState: { track: Track | null; isPlaying: boolean; introMarker?: number; outroMarker?: number };
+  deckBState: { track: Track | null; isPlaying: boolean; introMarker?: number; outroMarker?: number };
   library: Track[];
   isAutomixEnabled: boolean;
-  onTransitionComplete: (winningDeck: 'A' | 'B', nextTrack: Track) => void;
+  onTransitionStart: (winningDeck: 'A' | 'B', nextTrack: Track) => void;
+  onTransitionComplete: (winningDeck: 'A' | 'B', nextTrack: Track, isFromLibrary: boolean) => void;
+  onTransitionCancel: (cancelledDeck: 'A' | 'B') => void;
 }
 
-export function useAutoMixer({ deckAState, deckBState, library, isAutomixEnabled, onTransitionComplete }: AutoMixerProps) {
+export function useAutoMixer({ deckAState, deckBState, library, isAutomixEnabled, onTransitionStart, onTransitionComplete, onTransitionCancel }: AutoMixerProps) {
   const animationRef = useRef<number | null>(null);
   const isTransitioning = useRef<boolean>(false);
-  const TRANSITION_DURATION = 15; // seconds for crossfade
+  const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!isAutomixEnabled) {
@@ -25,7 +28,8 @@ export function useAutoMixer({ deckAState, deckBState, library, isAutomixEnabled
 
     const monitorLoop = () => {
       let activeDeck: 'A' | 'B' | null = null;
-      let remainingTime = Infinity;
+      let timePastOutro = -1;
+      let fadeDuration = 15;
 
       if (deckAState.isPlaying && !deckBState.isPlaying) activeDeck = 'A';
       if (deckBState.isPlaying && !deckAState.isPlaying) activeDeck = 'B';
@@ -33,59 +37,109 @@ export function useAutoMixer({ deckAState, deckBState, library, isAutomixEnabled
       if (activeDeck === 'A' && deckAState.track && audio.deckA.player.buffer) {
         const current = audio.deckA.getCurrentTime();
         const duration = audio.deckA.player.buffer.duration;
-        remainingTime = duration - current;
+        const outroMarker = deckAState.outroMarker ?? (duration - 15);
+        timePastOutro = current - outroMarker;
+        fadeDuration = duration - outroMarker;
       } else if (activeDeck === 'B' && deckBState.track && audio.deckB.player.buffer) {
         const current = audio.deckB.getCurrentTime();
         const duration = audio.deckB.player.buffer.duration;
-        remainingTime = duration - current;
+        const outroMarker = deckBState.outroMarker ?? (duration - 15);
+        timePastOutro = current - outroMarker;
+        fadeDuration = duration - outroMarker;
       }
 
       // Trigger transition logic if threshold breached
-      if (remainingTime <= TRANSITION_DURATION && !isTransitioning.current && library.length > 0) {
+      const targetDeckState = activeDeck === 'A' ? deckBState : deckAState;
+      const hasNextTrack = library.length > 0 || targetDeckState.track !== null;
+
+      if (timePastOutro >= 0 && !isTransitioning.current && hasNextTrack) {
         isTransitioning.current = true;
-        executeAutoTransition(activeDeck);
+        // Ensure fadeDuration is valid
+        const safeFadeDuration = Math.max(1, fadeDuration);
+        executeAutoTransition(activeDeck, safeFadeDuration);
+      } else if (isTransitioning.current && timePastOutro < 0 && activeDeck) {
+        // User scrubbed backward before the outro marker during a transition
+        isTransitioning.current = false;
+        if (transitionTimeoutRef.current) {
+          clearTimeout(transitionTimeoutRef.current);
+          transitionTimeoutRef.current = null;
+        }
+        
+        // Stop the incoming deck, cancel the crossfade ramp
+        const targetDeckId = activeDeck === 'A' ? 'B' : 'A';
+        const targetDeck = targetDeckId === 'A' ? audio.deckA : audio.deckB;
+        targetDeck.stop();
+        audio.crossfader.fade.cancelScheduledValues(Tone.now());
+        
+        onTransitionCancel(targetDeckId);
       }
 
       animationRef.current = requestAnimationFrame(monitorLoop);
     };
 
-    const executeAutoTransition = async (currentActive: 'A' | 'B' | null) => {
+    const executeAutoTransition = async (currentActive: 'A' | 'B' | null, fadeDuration: number) => {
       if (!currentActive) return;
       
       const nextDeckId = currentActive === 'A' ? 'B' : 'A';
       const targetDeck = nextDeckId === 'A' ? audio.deckA : audio.deckB;
       const currentDeck = currentActive === 'A' ? audio.deckA : audio.deckB;
+      const nextDeckState = currentActive === 'A' ? deckBState : deckAState;
       
-      // Grab next track from library pool
-      const nextTrack = library[0]; 
-      if (!nextTrack) return;
+      let nextTrack = nextDeckState.track;
+      let isFromLibrary = false;
 
-      let trackUrl = nextTrack.url;
-      if (nextTrack.fileHandle && !trackUrl) {
-        trackUrl = await createTrackUrl(nextTrack.fileHandle);
+      // If the target deck is empty, pull from library
+      if (!nextTrack) {
+        nextTrack = library[0]; 
+        isFromLibrary = true;
       }
 
-      // 1. Load and Sync Tempo
-      await targetDeck.loadTrack(trackUrl);
-      targetDeck.originalBpm = nextTrack.bpm;
-      if (targetDeck.originalBpm > 0 && currentDeck.currentBpm > 0) {
-        targetDeck.setPlaybackRate(currentDeck.currentBpm / targetDeck.originalBpm);
-      }
-
-      // 2. Start target deck
-      targetDeck.play();
-
-      // 3. Ramp Crossfader
-      const targetValue = nextDeckId === 'A' ? 0 : 1;
-      
-      // Linear automation over the remaining duration
-      audio.crossfader.fade.rampTo(targetValue, TRANSITION_DURATION);
-
-      setTimeout(() => {
-        currentDeck.stop();
+      if (!nextTrack) {
         isTransitioning.current = false;
-        onTransitionComplete(nextDeckId, nextTrack);
-      }, TRANSITION_DURATION * 1000);
+        return;
+      }
+
+      try {
+        let trackUrl = nextTrack.url;
+        if (nextTrack.fileHandle && !trackUrl) {
+          trackUrl = await createTrackUrl(nextTrack.fileHandle);
+        }
+
+        // 1. Load and Sync Tempo
+        if (isFromLibrary || !targetDeck.player.loaded) {
+          await targetDeck.loadTrack(trackUrl);
+        }
+
+        targetDeck.originalBpm = nextTrack.bpm;
+        if (targetDeck.originalBpm > 0 && currentDeck.currentBpm > 0) {
+          targetDeck.setPlaybackRate(currentDeck.currentBpm / targetDeck.originalBpm);
+        }
+
+        const introMarker = nextDeckState.introMarker ?? 0;
+        
+        // 2. Start target deck at its Intro marker
+        targetDeck.seek(introMarker);
+        targetDeck.play();
+        
+        onTransitionStart(nextDeckId, nextTrack!);
+
+        // 3. Ramp Crossfader
+        const targetValue = nextDeckId === 'A' ? 0 : 1;
+        
+        // Linear automation over the remaining duration
+        audio.crossfader.fade.rampTo(targetValue, fadeDuration);
+
+        transitionTimeoutRef.current = setTimeout(() => {
+          currentDeck.stop();
+          isTransitioning.current = false;
+          transitionTimeoutRef.current = null;
+          // Only slice from library if we actually used a library track
+          onTransitionComplete(nextDeckId, nextTrack!, isFromLibrary);
+        }, fadeDuration * 1000);
+      } catch (err) {
+        console.error("AutoMixer Transition Failed:", err);
+        isTransitioning.current = false;
+      }
     };
 
     animationRef.current = requestAnimationFrame(monitorLoop);

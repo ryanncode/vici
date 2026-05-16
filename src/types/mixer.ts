@@ -15,6 +15,7 @@ export interface TrackMetadata {
   bitrate?: number;
   duration: number;
   isScanned?: boolean;
+  replayGain?: number;
   // Non-indexed properties
   albumArt?: Blob;
   waveformPeaks?: Float32Array;
@@ -34,6 +35,7 @@ export interface Track {
   fileType?: string;
   bitrate?: number;
   duration: string;
+  replayGain?: number;
   url: string; // Dynamic Object URL or local asset path
   fileHandle?: FileSystemFileHandle; // FileSystemFileHandle
   rawFile?: File; // Fallback HTML5 File
@@ -44,5 +46,7 @@ export interface DeckState {
   isPlaying: boolean;
   currentTime: number;
   duration: number;
+  introMarker: number;
+  outroMarker: number;
 }
 

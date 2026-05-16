@@ -7,11 +7,19 @@ export class Deck {
   public filter: Tone.Filter;
   public delay: Tone.FeedbackDelay;
   public reverb: Tone.Freeverb;
+  public phaser: Tone.Phaser;
+  public gate: Tone.Tremolo;
+  public sirenSynth: Tone.Synth;
+  public sirenLfo: Tone.LFO;
   public id: 'A' | 'B';
   private lastRateChangeTime: number = 0;
   private currentPositionOffset: number = 0;
   public originalBpm: number = 120;
   public currentBpm: number = 120;
+
+  public peaks: Float32Array | null = null;
+  public channelVolume: number = 1.0;
+  public trackGainDb: number = 0;
 
   constructor(id: 'A' | 'B', outputNode: Tone.InputNode) {
     this.id = id;
@@ -20,20 +28,85 @@ export class Deck {
     this.filter = new Tone.Filter({ type: "lowpass", frequency: 20000, rolloff: -24 });
     
     // Dub/Techno FX
-    this.delay = new Tone.FeedbackDelay("8n", 0.5);
+    this.delay = new Tone.FeedbackDelay("8n", 0.7); // Darker, higher feedback
     this.delay.wet.value = 0; // Off by default
     
-    this.reverb = new Tone.Freeverb({ roomSize: 0.7, dampening: 3000 });
+    this.reverb = new Tone.Freeverb({ roomSize: 0.8, dampening: 5000 }); // More metallic/splasy
     this.reverb.wet.value = 0; // Off by default
 
+    // Leftfield / Trance FX
+    this.phaser = new Tone.Phaser({
+      frequency: 0.5,
+      octaves: 3,
+      baseFrequency: 350
+    });
+    this.phaser.wet.value = 0;
+
+    this.gate = new Tone.Tremolo({
+      frequency: "16n",
+      type: "square",
+      depth: 1,
+      spread: 0
+    }).start();
+    this.gate.wet.value = 0;
+
+    // Dub Siren
+    this.sirenSynth = new Tone.Synth({
+      oscillator: { type: "square" },
+      envelope: { attack: 0.1, decay: 0.1, sustain: 1, release: 0.5 }
+    }).connect(this.delay); // Route through delay and reverb!
+    
+    this.sirenLfo = new Tone.LFO({
+      type: "sine",
+      min: 400,
+      max: 800,
+      frequency: "8n"
+    }).start();
+    this.sirenLfo.connect(this.sirenSynth.oscillator.frequency);
+
     this.player = new Tone.Player();
-    this.player.chain(this.eq, this.filter, this.delay, this.reverb, this.volumeNode);
+    this.player.chain(this.eq, this.filter, this.phaser, this.gate, this.delay, this.reverb, this.volumeNode);
     this.player.fadeIn = 0.1;
     this.player.fadeOut = 0.1;
   }
 
   public async loadTrack(url: string): Promise<void> {
     await this.player.load(url);
+    this.currentPositionOffset = 0;
+    this.lastRateChangeTime = Tone.context.currentTime;
+    this.generatePeaks();
+  }
+
+  private generatePeaks() {
+    const buffer = this.player.buffer;
+    if (!buffer) return;
+    
+    // Generate ~1000 peaks
+    const numPeaks = 1000;
+    const data = buffer.getChannelData(0);
+    const blockSize = Math.floor(data.length / numPeaks);
+    this.peaks = new Float32Array(numPeaks);
+    
+    for (let i = 0; i < numPeaks; i++) {
+      let sum = 0;
+      const start = i * blockSize;
+      const end = start + blockSize;
+      for (let j = start; j < end; j++) {
+        sum += Math.abs(data[j]);
+      }
+      this.peaks[i] = sum / blockSize;
+    }
+    
+    // Normalize peaks
+    let max = 0;
+    for (let i = 0; i < numPeaks; i++) {
+      if (this.peaks[i] > max) max = this.peaks[i];
+    }
+    if (max > 0) {
+      for (let i = 0; i < numPeaks; i++) {
+        this.peaks[i] = this.peaks[i] / max;
+      }
+    }
   }
 
   public play(): void {
@@ -123,6 +196,75 @@ export class Deck {
 
   public setReverbSize(value: number): void {
     this.reverb.roomSize.value = value;
+  }
+
+  // Phaser
+  public setPhaserState(isOn: boolean): void {
+    this.phaser.wet.value = isOn ? 0.8 : 0;
+  }
+
+  public setPhaserRate(rateHz: number): void {
+    this.phaser.frequency.value = rateHz;
+  }
+
+  // Trance Gate
+  public setGateState(isOn: boolean): void {
+    this.gate.wet.value = isOn ? 1 : 0;
+  }
+
+  // Dub Siren
+  public triggerSiren(isOn: boolean): void {
+    if (isOn) {
+      this.sirenSynth.triggerAttack("C4");
+    } else {
+      this.sirenSynth.triggerRelease();
+    }
+  }
+
+  // Beat Roll / Slip Loop
+  public setRoll(isActive: boolean, rate: number = 8): void { // rate e.g. 8 for 1/8th note
+    if (!this.player.buffer || !this.player.loaded) return;
+    
+    if (isActive) {
+      // Calculate beat length in seconds
+      const beatLength = 60 / this.currentBpm;
+      const rollLength = beatLength * (4 / rate); // 4/4 time signature
+      
+      const now = this.getCurrentTime();
+      this.player.loopStart = now;
+      this.player.loopEnd = now + rollLength;
+      this.player.loop = true;
+    } else {
+      this.player.loop = false;
+      this.player.loopStart = 0;
+      this.player.loopEnd = this.player.buffer.duration;
+    }
+  }
+
+  private updateVolume(): void {
+    let channelDb = -Infinity;
+    if (this.channelVolume > 0.01) {
+      // Linear 0 to 1 mapping to dB
+      // Use 20 * log10(gain)
+      channelDb = 20 * Math.log10(this.channelVolume);
+    }
+    
+    // Total DB limit to +12dB to prevent clipping
+    let totalDb = channelDb + this.trackGainDb;
+    if (totalDb > 12) totalDb = 12;
+    if (totalDb < -100) totalDb = -100;
+    
+    this.volumeNode.volume.rampTo(totalDb, 0.05);
+  }
+
+  public setChannelVolume(linearGain: number): void {
+    this.channelVolume = linearGain;
+    this.updateVolume();
+  }
+
+  public setTrackGainDb(db: number): void {
+    this.trackGainDb = db;
+    this.updateVolume();
   }
 }
 
