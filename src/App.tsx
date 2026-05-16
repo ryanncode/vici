@@ -81,6 +81,7 @@ export default function App() {
   const [sessionHandles, setSessionHandles] = useState<Record<string, { fileHandle?: FileSystemFileHandle, rawFile?: File }>>({});
   
   const dbTracksCount = useLiveQuery(() => db.tracks.count()) || 0;
+  const savedPlaylists = useLiveQuery(() => db.playlists.toArray()) || [];
   const rawSessionTracks = useLiveQuery(
     async () => {
       if (activeSessionTrackIds.length === 0) return [];
@@ -362,6 +363,9 @@ export default function App() {
         const file = await handle.getFile();
         const content = await file.text();
         applyM3U(content);
+        
+        // Save to DB so it appears in the sidebar permanently
+        await db.playlists.put({ id: handle.name, name: handle.name.replace(/\.[^/.]+$/, ""), content: content });
         return;
       } catch (e) {
         console.warn('showOpenFilePicker failed or cancelled', e);
@@ -374,9 +378,11 @@ export default function App() {
     if (!e.target.files || !e.target.files[0]) return;
     const file = e.target.files[0];
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       const content = evt.target?.result as string;
       applyM3U(content);
+      // Save to DB so it appears in the sidebar permanently
+      await db.playlists.put({ id: file.name, name: file.name.replace(/\.[^/.]+$/, ""), content: content });
     };
     reader.readAsText(file);
   };
@@ -392,6 +398,8 @@ export default function App() {
       const writable = await handle.createWritable();
       await writable.write(m3uContent);
       await writable.close();
+      
+      await db.playlists.put({ id: handle.name, name: handle.name.replace(/\.[^/.]+$/, ""), content: m3uContent });
       alert('Playlist saved!');
     } catch (e) {
       console.log('User cancelled or error', e);
@@ -1446,20 +1454,32 @@ export default function App() {
                   <ListMusic size={16} /> Playlists (M3U)
                 </button>
               </div>
+
+              {savedPlaylists.length > 0 && (
+                <div className="mt-6">
+                  <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Saved Playlists</div>
+                  <div className="flex flex-col gap-1">
+                    {savedPlaylists.map(pl => (
+                      <button
+                         key={pl.id}
+                         onClick={() => {
+                           applyM3U(pl.content);
+                           setActiveTab('playlists');
+                         }}
+                         className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition text-slate-400 hover:bg-slate-900 hover:text-slate-200 text-left truncate"
+                      >
+                         <ListMusic size={14} className="shrink-0" /> <span className="truncate">{pl.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {activeTab === 'playlists' && (
               <div className="p-4" onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop}>
                 <div className={`p-4 border-2 border-dashed rounded-lg text-center transition ${dragActive ? 'border-blue-500 bg-blue-500/10' : 'border-slate-800 bg-slate-900/50'}`}>
-                  <p className="text-xs text-slate-400 mb-4">Drag & drop .m3u files here, or use the buttons below.</p>
-                  <div className="flex flex-col gap-2">
-                    <button onClick={handleOpenPlaylist} className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-medium flex justify-center items-center gap-2">
-                      <FolderOpen size={14} /> Open M3U
-                    </button>
-                    <button onClick={handleSavePlaylist} className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-medium flex justify-center items-center gap-2">
-                      <Save size={14} /> Save Queue as M3U
-                    </button>
-                  </div>
+                  <p className="text-xs text-slate-400">Drag & drop .m3u files here to load them.</p>
                 </div>
               </div>
             )}
@@ -1486,6 +1506,17 @@ export default function App() {
                     <Trash2 size={14} /> Clear Cache
                   </button>
                 )}
+              </div>
+            )}
+
+            {activeTab === 'playlists' && (
+              <div className="flex justify-start gap-3 mb-3">
+                <button onClick={handleOpenPlaylist} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white shadow-sm shadow-blue-500/20 rounded text-xs font-medium flex justify-center items-center gap-2 transition">
+                  <FolderOpen size={14} /> Open M3U
+                </button>
+                <button onClick={handleSavePlaylist} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-medium flex justify-center items-center gap-2 transition">
+                  <Save size={14} /> Save Queue as M3U
+                </button>
               </div>
             )}
 

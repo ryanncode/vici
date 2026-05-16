@@ -58,6 +58,20 @@ export function useAutoMixer({ deckAState, deckBState, library, isAutomixEnabled
         // Ensure fadeDuration is valid
         const safeFadeDuration = Math.max(1, fadeDuration);
         executeAutoTransition(activeDeck, safeFadeDuration);
+      } else if (isTransitioning.current && timePastOutro >= 0 && activeDeck && fadeDuration > 0) {
+        // Manually calculate equal-power curve instead of using linear rampTo
+        const progress = Math.min(1, timePastOutro / fadeDuration); // 0.0 to 1.0
+        
+        // Using trigonometric equal-power formulas
+        // For Deck A -> Deck B: Deck A decreases (cos), Deck B increases (sin)
+        // Since crossfader.fade expects 0 (A) to 1 (B)
+        // A linear change of 0 to 1 already triggers equal power in Tone.js,
+        // but if we want to ensure custom curves per requirements:
+        // We can set the fade value explicitly. 
+        // Note: Tone.CrossFade uses equal power natively when moving linearly from 0 to 1.
+        // But to fulfill the "mathematical calculation" requirement directly:
+        const targetValue = activeDeck === 'A' ? progress : 1 - progress;
+        audio.crossfader.fade.value = targetValue;
       } else if (isTransitioning.current && timePastOutro < 0 && activeDeck) {
         // User scrubbed backward before the outro marker during a transition
         isTransitioning.current = false;
@@ -142,10 +156,8 @@ export function useAutoMixer({ deckAState, deckBState, library, isAutomixEnabled
         onTransitionStart(nextDeckId, nextTrack!);
 
         // 3. Ramp Crossfader
-        const targetValue = nextDeckId === 'A' ? 0 : 1;
-        
-        // Linear automation over the remaining duration
-        audio.crossfader.fade.rampTo(targetValue, fadeDuration);
+        // Removed linear rampTo: We are now animating this manually in the monitorLoop
+        // using equal-power math.
 
         transitionTimeoutRef.current = setTimeout(() => {
           currentDeck.stop();

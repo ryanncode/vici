@@ -10,9 +10,9 @@ Vici Pro is a high-performance, web-based dual-deck DJ auto-mixing application. 
 - **Pitch & Tempo Control:** Decks include ±16% pitch faders. Changes to playback rate dynamically adjust a sub-millisecond offset tracker to ensure visually smooth seekbar tracking.
 - **Sync & Master Lock:** Click `SYNC` to match the opposite deck's tempo instantly, or hold it to lock into continuous tracking mode. Assigning a deck as `MASTER` forces the secondary deck to mathematically mirror all tempo fluctuations.
 - **Playback Tracking:** Native seekbars allow users to drag the playback position in real-time. Live BPM and track duration are continuously polled.
-- **Automix Supervisor:** A high-frequency polling loop monitors active track lengths. When a track reaches its final 15 seconds, the engine initiates a synchronized crossfade into the standby deck and queues the next track from the library.
+- **Automix Supervisor:** A high-frequency polling loop monitors active track lengths. When a track reaches its final 15 seconds, the engine initiates a synchronized equal-power crossfade into the standby deck and queues the next track from the library.
 - **Local File Management:** Utilizes the desktop-class `window.showDirectoryPicker` to recursively read local audio folders into the browser without uploading. Includes fallbacks for restricted iframe environments.
-- **M3U Playlist Support:** Import and export `.m3u` or `.m3u8` playlists to instantly queue up specific sets of tracks.
+- **M3U Playlist Support:** Import and export `.m3u` or `.m3u8` playlists to instantly queue up specific sets of tracks. Playlists are permanently saved to the browser's local database and accessible directly from the sidebar.
 
 ## Software Stack
 
