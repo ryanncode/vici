@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as Tone from 'tone';
-import { Play, Square, Music, ArrowLeftSquare, ArrowRightSquare, ToggleLeft, ToggleRight, FolderSearch, FolderOpen, Save, ListMusic } from 'lucide-react';
+import { Play, Square, Music, ArrowLeftSquare, ArrowRightSquare, ToggleLeft, ToggleRight, FolderSearch, FolderOpen, Save, ListMusic, Link, Lock } from 'lucide-react';
 import { AudioEngine } from './services/AudioEngine';
 import { useAutoMixer } from './hooks/useAutoMixer';
 import { loadLocalDirectory, createTrackUrl } from './services/FileManager';
@@ -29,6 +29,20 @@ export default function App() {
   const [filterA, setFilterA] = useState(0);
   const [eqB, setEqB] = useState({ high: 0, mid: 0, low: 0 });
   const [filterB, setFilterB] = useState(0);
+
+  const [pitchA, setPitchA] = useState(1.0);
+  const [pitchB, setPitchB] = useState(1.0);
+  const [syncA, setSyncA] = useState(false);
+  const [syncB, setSyncB] = useState(false);
+  const [masterDeck, setMasterDeck] = useState<'A' | 'B' | null>(null);
+
+  const [fxA, setFxA] = useState({ delayOn: false, delayTime: 0.25, delayFeedback: 0.5, reverbOn: false, reverbSize: 0.7 });
+  const [fxB, setFxB] = useState({ delayOn: false, delayTime: 0.25, delayFeedback: 0.5, reverbOn: false, reverbSize: 0.7 });
+
+  const syncTimerA = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const syncTimerB = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const syncHandledA = useRef<boolean>(false);
+  const syncHandledB = useRef<boolean>(false);
 
   const [activeTab, setActiveTab] = useState<'tracks' | 'playlists'>('tracks');
   const [dragActive, setDragActive] = useState(false);
@@ -229,10 +243,14 @@ export default function App() {
         setDeckA(prev => ({ ...prev, track }));
         await engine.deckA.loadTrack(trackUrl);
         engine.deckA.originalBpm = track.bpm;
+        setPitchA(1.0);
+        engine.deckA.setPlaybackRate(1.0);
       } else {
         setDeckB(prev => ({ ...prev, track }));
         await engine.deckB.loadTrack(trackUrl);
         engine.deckB.originalBpm = track.bpm;
+        setPitchB(1.0);
+        engine.deckB.setPlaybackRate(1.0);
       }
     } catch (err) {
       console.error("Audio load error:", err);
@@ -301,6 +319,125 @@ export default function App() {
     } else {
       setFilterB(value);
       engine.deckB.setFilterColor(value);
+    }
+  };
+
+  const applySyncMath = (deckToAdjust: 'A' | 'B') => {
+    const audio = AudioEngine.getInstance();
+    if (deckToAdjust === 'A') {
+      if (audio.deckA.originalBpm > 0 && audio.deckB.currentBpm > 0) {
+        const newPitchA = audio.deckB.currentBpm / audio.deckA.originalBpm;
+        setPitchA(newPitchA);
+        audio.deckA.setPlaybackRate(newPitchA);
+      }
+    } else {
+      if (audio.deckB.originalBpm > 0 && audio.deckA.currentBpm > 0) {
+        const newPitchB = audio.deckA.currentBpm / audio.deckB.originalBpm;
+        setPitchB(newPitchB);
+        audio.deckB.setPlaybackRate(newPitchB);
+      }
+    }
+  };
+
+  const handlePitchChange = (deckId: 'A' | 'B', newPitch: number) => {
+    const audio = AudioEngine.getInstance();
+    if (deckId === 'A') {
+      setPitchA(newPitch);
+      audio.deckA.setPlaybackRate(newPitch);
+      
+      if (syncB || masterDeck === 'A') {
+        const newBpmA = audio.deckA.currentBpm;
+        if (audio.deckB.originalBpm > 0) {
+          const requiredPitchB = newBpmA / audio.deckB.originalBpm;
+          setPitchB(requiredPitchB);
+          audio.deckB.setPlaybackRate(requiredPitchB);
+        }
+      }
+    } else {
+      setPitchB(newPitch);
+      audio.deckB.setPlaybackRate(newPitch);
+      
+      if (syncA || masterDeck === 'B') {
+        const newBpmB = audio.deckB.currentBpm;
+        if (audio.deckA.originalBpm > 0) {
+          const requiredPitchA = newBpmB / audio.deckA.originalBpm;
+          setPitchA(requiredPitchA);
+          audio.deckA.setPlaybackRate(requiredPitchA);
+        }
+      }
+    }
+  };
+
+  const handleSyncDown = (deckId: 'A' | 'B') => {
+    const timer = deckId === 'A' ? syncTimerA : syncTimerB;
+    const handledRef = deckId === 'A' ? syncHandledA : syncHandledB;
+    handledRef.current = false;
+    
+    timer.current = setTimeout(() => {
+      handledRef.current = true;
+      if (deckId === 'A') setSyncA(true); else setSyncB(true);
+      applySyncMath(deckId);
+    }, 1000);
+  };
+
+  const handleSyncUp = (deckId: 'A' | 'B') => {
+    const timer = deckId === 'A' ? syncTimerA : syncTimerB;
+    const handledRef = deckId === 'A' ? syncHandledA : syncHandledB;
+    
+    if (timer.current) clearTimeout(timer.current);
+    
+    if (!handledRef.current) {
+      const isCurrentlySyncing = deckId === 'A' ? syncA : syncB;
+      if (isCurrentlySyncing) {
+         if (deckId === 'A') setSyncA(false); else setSyncB(false);
+      } else {
+         applySyncMath(deckId);
+      }
+    }
+  };
+
+  const handleMasterToggle = (deckId: 'A' | 'B') => {
+    if (masterDeck === deckId) {
+      setMasterDeck(null);
+    } else {
+      setMasterDeck(deckId);
+      applySyncMath(deckId === 'A' ? 'B' : 'A');
+    }
+  };
+
+  const handleFxToggle = (deckId: 'A' | 'B', fxType: 'delay' | 'reverb') => {
+    const engine = AudioEngine.getInstance();
+    const setFx = deckId === 'A' ? setFxA : setFxB;
+    const currentFx = deckId === 'A' ? fxA : fxB;
+    const deck = deckId === 'A' ? engine.deckA : engine.deckB;
+    
+    if (fxType === 'delay') {
+      const newState = !currentFx.delayOn;
+      setFx(prev => ({ ...prev, delayOn: newState }));
+      deck.setDelayState(newState);
+    } else {
+      const newState = !currentFx.reverbOn;
+      setFx(prev => ({ ...prev, reverbOn: newState }));
+      deck.setReverbState(newState);
+    }
+  };
+
+  const handleFxParamChange = (deckId: 'A' | 'B', fxType: 'delay' | 'reverb', param: 'time' | 'feedback' | 'size', value: number) => {
+    const engine = AudioEngine.getInstance();
+    const setFx = deckId === 'A' ? setFxA : setFxB;
+    const deck = deckId === 'A' ? engine.deckA : engine.deckB;
+    
+    if (fxType === 'delay') {
+      if (param === 'time') {
+        setFx(prev => ({ ...prev, delayTime: value }));
+        deck.setDelayTime(value);
+      } else if (param === 'feedback') {
+        setFx(prev => ({ ...prev, delayFeedback: value }));
+        deck.setDelayFeedback(value);
+      }
+    } else if (fxType === 'reverb' && param === 'size') {
+      setFx(prev => ({ ...prev, reverbSize: value }));
+      deck.setReverbSize(value);
     }
   };
 
@@ -395,6 +532,42 @@ export default function App() {
             </div>
             
             <div className="mt-auto flex flex-col gap-6">
+              
+              {/* FX Bay A */}
+              <div className="flex gap-4 p-3 bg-slate-900/50 rounded-lg border border-slate-800/50">
+                <div className="flex flex-col gap-2 flex-1 border-r border-slate-800/50 pr-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-bold tracking-widest text-blue-400">ECHO</span>
+                    <button 
+                      onClick={() => handleFxToggle('A', 'delay')}
+                      className={`w-8 h-4 rounded-full transition-colors ${fxA.delayOn ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)]' : 'bg-slate-700'}`}
+                    ></button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] text-slate-500 w-8">TIME</span>
+                    <input type="range" min="0.05" max="1" step="0.01" value={fxA.delayTime} onChange={(e) => handleFxParamChange('A', 'delay', 'time', parseFloat(e.target.value))} className="flex-1 h-1 bg-slate-800 rounded appearance-none accent-slate-400" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] text-slate-500 w-8">FDBK</span>
+                    <input type="range" min="0" max="0.95" step="0.01" value={fxA.delayFeedback} onChange={(e) => handleFxParamChange('A', 'delay', 'feedback', parseFloat(e.target.value))} className="flex-1 h-1 bg-slate-800 rounded appearance-none accent-slate-400" />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2 flex-1">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-bold tracking-widest text-cyan-400">REVERB</span>
+                    <button 
+                      onClick={() => handleFxToggle('A', 'reverb')}
+                      className={`w-8 h-4 rounded-full transition-colors ${fxA.reverbOn ? 'bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.6)]' : 'bg-slate-700'}`}
+                    ></button>
+                  </div>
+                  <div className="flex items-center gap-2 mt-auto mb-1">
+                    <span className="text-[9px] text-slate-500 w-8">SIZE</span>
+                    <input type="range" min="0" max="1" step="0.01" value={fxA.reverbSize} onChange={(e) => handleFxParamChange('A', 'reverb', 'size', parseFloat(e.target.value))} className="flex-1 h-1 bg-slate-800 rounded appearance-none accent-slate-400" />
+                  </div>
+                </div>
+              </div>
+
               <div className="relative group cursor-pointer">
                 <div className="absolute -inset-1 bg-gradient-to-r from-blue-600/20 to-cyan-400/20 rounded-full blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
                 <input 
@@ -411,10 +584,44 @@ export default function App() {
                 <button 
                   disabled={!deckA.track}
                   onClick={() => toggleDeck('A')}
-                  className="w-16 h-16 rounded-full flex items-center justify-center transition bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white shadow-inner border border-slate-700/50"
+                  className="w-16 h-16 rounded-full flex items-center justify-center transition bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white shadow-inner border border-slate-700/50 shrink-0"
                 >
                   {deckA.isPlaying ? <Square size={24} fill="currentColor" className="text-blue-500" /> : <Play size={26} fill="currentColor" className="ml-1" />}
                 </button>
+
+                <div className="flex gap-4 items-center">
+                  <div className="flex flex-col gap-2">
+                    <button 
+                      onMouseDown={() => handleSyncDown('A')}
+                      onMouseUp={() => handleSyncUp('A')}
+                      onMouseLeave={() => handleSyncUp('A')}
+                      className={`px-3 py-1.5 rounded text-[10px] font-bold transition-colors flex items-center gap-1.5 border ${syncA ? 'bg-blue-600 text-white border-blue-500 shadow-[0_0_10px_rgba(37,99,235,0.5)]' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
+                    >
+                      <Link size={12} /> SYNC
+                    </button>
+                    <button 
+                      onClick={() => handleMasterToggle('A')}
+                      className={`px-3 py-1.5 rounded text-[10px] font-bold transition-colors flex items-center gap-1.5 border ${masterDeck === 'A' ? 'bg-amber-600 text-white border-amber-500 shadow-[0_0_10px_rgba(217,119,6,0.5)]' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
+                    >
+                      <Lock size={12} /> MASTER
+                    </button>
+                  </div>
+                  
+                  <div className="flex flex-col items-center gap-1 w-24">
+                    <span className="text-[10px] text-slate-400 font-bold tracking-widest">PITCH</span>
+                    <input 
+                      type="range" 
+                      min="0.84" 
+                      max="1.16" 
+                      step="0.001" 
+                      value={pitchA} 
+                      onChange={(e) => handlePitchChange('A', parseFloat(e.target.value))} 
+                      onDoubleClick={() => handlePitchChange('A', 1.0)}
+                      className="w-full h-1 bg-slate-800 rounded-full appearance-none cursor-pointer accent-blue-500" 
+                    />
+                    <span className="text-[10px] font-mono text-slate-500">{((pitchA - 1) * 100).toFixed(1)}%</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -500,6 +707,42 @@ export default function App() {
             </div>
             
             <div className="mt-auto flex flex-col gap-6">
+              
+              {/* FX Bay B */}
+              <div className="flex gap-4 p-3 bg-slate-900/50 rounded-lg border border-slate-800/50">
+                <div className="flex flex-col gap-2 flex-1 border-r border-slate-800/50 pr-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-bold tracking-widest text-blue-400">ECHO</span>
+                    <button 
+                      onClick={() => handleFxToggle('B', 'delay')}
+                      className={`w-8 h-4 rounded-full transition-colors ${fxB.delayOn ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)]' : 'bg-slate-700'}`}
+                    ></button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] text-slate-500 w-8">TIME</span>
+                    <input type="range" min="0.05" max="1" step="0.01" value={fxB.delayTime} onChange={(e) => handleFxParamChange('B', 'delay', 'time', parseFloat(e.target.value))} className="flex-1 h-1 bg-slate-800 rounded appearance-none accent-slate-400" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] text-slate-500 w-8">FDBK</span>
+                    <input type="range" min="0" max="0.95" step="0.01" value={fxB.delayFeedback} onChange={(e) => handleFxParamChange('B', 'delay', 'feedback', parseFloat(e.target.value))} className="flex-1 h-1 bg-slate-800 rounded appearance-none accent-slate-400" />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2 flex-1">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-bold tracking-widest text-cyan-400">REVERB</span>
+                    <button 
+                      onClick={() => handleFxToggle('B', 'reverb')}
+                      className={`w-8 h-4 rounded-full transition-colors ${fxB.reverbOn ? 'bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.6)]' : 'bg-slate-700'}`}
+                    ></button>
+                  </div>
+                  <div className="flex items-center gap-2 mt-auto mb-1">
+                    <span className="text-[9px] text-slate-500 w-8">SIZE</span>
+                    <input type="range" min="0" max="1" step="0.01" value={fxB.reverbSize} onChange={(e) => handleFxParamChange('B', 'reverb', 'size', parseFloat(e.target.value))} className="flex-1 h-1 bg-slate-800 rounded appearance-none accent-slate-400" />
+                  </div>
+                </div>
+              </div>
+
               <div className="relative group cursor-pointer">
                 <div className="absolute -inset-1 bg-gradient-to-r from-cyan-400/20 to-blue-600/20 rounded-full blur opacity-0 group-hover:opacity-100 transition duration-500"></div>
                 <input 
@@ -516,10 +759,44 @@ export default function App() {
                 <button 
                   disabled={!deckB.track}
                   onClick={() => toggleDeck('B')}
-                  className="w-16 h-16 rounded-full flex items-center justify-center transition bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white shadow-inner border border-slate-700/50"
+                  className="w-16 h-16 rounded-full flex items-center justify-center transition bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white shadow-inner border border-slate-700/50 shrink-0"
                 >
                   {deckB.isPlaying ? <Square size={24} fill="currentColor" className="text-blue-500" /> : <Play size={26} fill="currentColor" className="ml-1" />}
                 </button>
+
+                <div className="flex gap-4 items-center flex-row-reverse">
+                  <div className="flex flex-col gap-2">
+                    <button 
+                      onMouseDown={() => handleSyncDown('B')}
+                      onMouseUp={() => handleSyncUp('B')}
+                      onMouseLeave={() => handleSyncUp('B')}
+                      className={`px-3 py-1.5 rounded text-[10px] font-bold transition-colors flex items-center gap-1.5 border ${syncB ? 'bg-blue-600 text-white border-blue-500 shadow-[0_0_10px_rgba(37,99,235,0.5)]' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
+                    >
+                      <Link size={12} /> SYNC
+                    </button>
+                    <button 
+                      onClick={() => handleMasterToggle('B')}
+                      className={`px-3 py-1.5 rounded text-[10px] font-bold transition-colors flex items-center gap-1.5 border ${masterDeck === 'B' ? 'bg-amber-600 text-white border-amber-500 shadow-[0_0_10px_rgba(217,119,6,0.5)]' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
+                    >
+                      <Lock size={12} /> MASTER
+                    </button>
+                  </div>
+                  
+                  <div className="flex flex-col items-center gap-1 w-24">
+                    <span className="text-[10px] text-slate-400 font-bold tracking-widest">PITCH</span>
+                    <input 
+                      type="range" 
+                      min="0.84" 
+                      max="1.16" 
+                      step="0.001" 
+                      value={pitchB} 
+                      onChange={(e) => handlePitchChange('B', parseFloat(e.target.value))} 
+                      onDoubleClick={() => handlePitchChange('B', 1.0)}
+                      className="w-full h-1 bg-slate-800 rounded-full appearance-none cursor-pointer accent-blue-500" 
+                    />
+                    <span className="text-[10px] font-mono text-slate-500">{((pitchB - 1) * 100).toFixed(1)}%</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

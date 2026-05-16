@@ -5,9 +5,11 @@ export class Deck {
   public volumeNode: Tone.Volume;
   public eq: Tone.EQ3;
   public filter: Tone.Filter;
+  public delay: Tone.FeedbackDelay;
+  public reverb: Tone.Freeverb;
   public id: 'A' | 'B';
-  private startTime: number = 0;
-  private pauseTime: number = 0;
+  private lastRateChangeTime: number = 0;
+  private currentPositionOffset: number = 0;
   public originalBpm: number = 120;
   public currentBpm: number = 120;
 
@@ -16,8 +18,16 @@ export class Deck {
     this.volumeNode = new Tone.Volume(0).connect(outputNode);
     this.eq = new Tone.EQ3(0, 0, 0);
     this.filter = new Tone.Filter({ type: "lowpass", frequency: 20000, rolloff: -24 });
+    
+    // Dub/Techno FX
+    this.delay = new Tone.FeedbackDelay("8n", 0.5);
+    this.delay.wet.value = 0; // Off by default
+    
+    this.reverb = new Tone.Freeverb({ roomSize: 0.7, dampening: 3000 });
+    this.reverb.wet.value = 0; // Off by default
+
     this.player = new Tone.Player();
-    this.player.chain(this.eq, this.filter, this.volumeNode);
+    this.player.chain(this.eq, this.filter, this.delay, this.reverb, this.volumeNode);
     this.player.fadeIn = 0.1;
     this.player.fadeOut = 0.1;
   }
@@ -28,34 +38,45 @@ export class Deck {
 
   public play(): void {
     if (this.player.loaded) {
-      this.startTime = Tone.context.currentTime - this.pauseTime;
-      this.player.start(undefined, this.pauseTime);
+      this.lastRateChangeTime = Tone.context.currentTime;
+      this.player.start(undefined, this.currentPositionOffset);
     }
   }
 
   public stop(): void {
     this.player.stop();
-    this.startTime = 0;
-    this.pauseTime = 0;
+    this.currentPositionOffset = 0;
+    this.lastRateChangeTime = 0;
   }
 
   public getCurrentTime(): number {
     if (this.player.state !== "started") {
-      return this.pauseTime;
+      return this.currentPositionOffset;
     }
-    return (Tone.context.currentTime - this.startTime) * this.player.playbackRate;
+    return this.currentPositionOffset + (Tone.context.currentTime - this.lastRateChangeTime) * this.player.playbackRate;
   }
 
   public seek(time: number): void {
     if (this.player.loaded) {
       if (this.player.state === "started") {
         this.player.stop();
-        this.startTime = Tone.context.currentTime - (time / this.player.playbackRate);
+        this.currentPositionOffset = time;
+        this.lastRateChangeTime = Tone.context.currentTime;
         this.player.start(undefined, time);
       } else {
-        this.pauseTime = time;
+        this.currentPositionOffset = time;
       }
     }
+  }
+
+  public setPlaybackRate(rate: number): void {
+    if (this.player.state === "started") {
+      const now = Tone.context.currentTime;
+      this.currentPositionOffset += (now - this.lastRateChangeTime) * this.player.playbackRate;
+      this.lastRateChangeTime = now;
+    }
+    this.player.playbackRate = rate;
+    this.currentBpm = this.originalBpm * rate;
   }
 
   public setEq(band: 'high' | 'mid' | 'low', value: number): void {
@@ -83,10 +104,25 @@ export class Deck {
     return outMin * Math.pow(outMax / outMin, norm);
   }
 
-  public setBpmSync(targetBpm: number): void {
-    if (this.originalBpm === 0) return;
-    this.currentBpm = targetBpm;
-    this.player.playbackRate = targetBpm / this.originalBpm;
+  // FX Bay Controls
+  public setDelayState(isOn: boolean): void {
+    this.delay.wet.value = isOn ? 0.5 : 0;
+  }
+
+  public setDelayFeedback(value: number): void {
+    this.delay.feedback.value = value;
+  }
+
+  public setDelayTime(timeInSeconds: number): void {
+    this.delay.delayTime.value = timeInSeconds;
+  }
+
+  public setReverbState(isOn: boolean): void {
+    this.reverb.wet.value = isOn ? 0.5 : 0;
+  }
+
+  public setReverbSize(value: number): void {
+    this.reverb.roomSize.value = value;
   }
 }
 

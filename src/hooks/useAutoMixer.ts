@@ -68,7 +68,9 @@ export function useAutoMixer({ deckAState, deckBState, library, isAutomixEnabled
       // 1. Load and Sync Tempo
       await targetDeck.loadTrack(trackUrl);
       targetDeck.originalBpm = nextTrack.bpm;
-      targetDeck.setBpmSync(currentDeck.currentBpm);
+      if (targetDeck.originalBpm > 0 && currentDeck.currentBpm > 0) {
+        targetDeck.setPlaybackRate(currentDeck.currentBpm / targetDeck.originalBpm);
+      }
 
       // 2. Start target deck
       targetDeck.play();
