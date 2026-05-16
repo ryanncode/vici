@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as Tone from 'tone';
-import { Play, Square, Music, ArrowLeftSquare, ArrowRightSquare, ToggleLeft, ToggleRight, FolderSearch, FolderOpen, Save, ListMusic, Scan } from 'lucide-react';
+import { Play, Square, Music, ArrowLeftSquare, ArrowRightSquare, ToggleLeft, ToggleRight, FolderSearch, FolderOpen, Save, ListMusic, Scan, Trash2 } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './services/Database';
 import { metadataScanner } from './services/MetadataScanner';
 import { AudioEngine } from './services/AudioEngine';
 import { useAutoMixer } from './hooks/useAutoMixer';
-import { loadLocalDirectory, createTrackUrl } from './services/FileManager';
+import { loadLocalDirectory, createTrackUrl, type FileSystemFileHandle } from './services/FileManager';
 import { parseM3U, generateM3U } from './utils/m3uParser';
-import type { Track, TrackMetadata } from './types/mixer';
+import type { Track, TrackMetadata, TrackSegment } from './types/mixer';
 
 import { Waveform } from './components/Waveform';
 
@@ -27,8 +27,8 @@ const formatAdjustedTime = (seconds: number, pitch: number) => {
 
 export default function App() {
   const [library, setLibrary] = useState<Track[]>([]);
-  const [deckA, setDeckA] = useState<{ track: Track | null; isPlaying: boolean; introMarker: number; outroMarker: number; peaks: Float32Array | null }>({ track: null, isPlaying: false, introMarker: 0, outroMarker: 0, peaks: null });
-  const [deckB, setDeckB] = useState<{ track: Track | null; isPlaying: boolean; introMarker: number; outroMarker: number; peaks: Float32Array | null }>({ track: null, isPlaying: false, introMarker: 0, outroMarker: 0, peaks: null });
+  const [deckA, setDeckA] = useState<{ track: Track | null; isPlaying: boolean; introMarker: number; outroMarker: number; peaks: Float32Array | null; segments: TrackSegment[] }>({ track: null, isPlaying: false, introMarker: 0, outroMarker: 0, peaks: null, segments: [] });
+  const [deckB, setDeckB] = useState<{ track: Track | null; isPlaying: boolean; introMarker: number; outroMarker: number; peaks: Float32Array | null; segments: TrackSegment[] }>({ track: null, isPlaying: false, introMarker: 0, outroMarker: 0, peaks: null, segments: [] });
   const [xfade, setXfade] = useState<number>(0.5);
   const [isAutomixEnabled, setIsAutomixEnabled] = useState(false);
   const [progressA, setProgressA] = useState({ current: 0, max: 100 });
@@ -45,6 +45,8 @@ export default function App() {
   const [pitchB, setPitchB] = useState(1.0);
   const [syncA, setSyncA] = useState(false);
   const [syncB, setSyncB] = useState(false);
+  const [muteA, setMuteA] = useState(false);
+  const [muteB, setMuteB] = useState(false);
   const [masterDeck, setMasterDeck] = useState<'A' | 'B' | null>(null);
 
   const [volA, setVolA] = useState(1.0);
@@ -62,8 +64,20 @@ export default function App() {
   const [dragActive, setDragActive] = useState(false);
   const [sessionStarted, setSessionStarted] = useState(false);
   
-  const dbTracks = useLiveQuery(() => db.tracks.toArray()) || [];
-  const displayTracks: (Track | TrackMetadata)[] = activeTab === 'tracks' ? (sessionStarted ? dbTracks : []) : library;
+  const [activeSessionTrackIds, setActiveSessionTrackIds] = useState<string[]>([]);
+  const [sessionHandles, setSessionHandles] = useState<Record<string, { fileHandle?: FileSystemFileHandle, rawFile?: File }>>({});
+  
+  const dbTracksCount = useLiveQuery(() => db.tracks.count()) || 0;
+  const rawSessionTracks = useLiveQuery(
+    async () => {
+      if (activeSessionTrackIds.length === 0) return [];
+      return await db.tracks.where('id').anyOf(activeSessionTrackIds).toArray();
+    },
+    [activeSessionTrackIds]
+  ) || [];
+
+  const sessionTracks = rawSessionTracks.map(t => ({ ...t, ...sessionHandles[t.id] }));
+  const displayTracks: (Track | TrackMetadata)[] = activeTab === 'tracks' ? (sessionStarted ? sessionTracks : []) : library;
 
   const [mixerHeightPct, setMixerHeightPct] = useState(65);
   const [isLibraryMaximized, setIsLibraryMaximized] = useState(false);
@@ -71,49 +85,7 @@ export default function App() {
 
   const fallbackDirInputRef = useRef<HTMLInputElement>(null);
   const fallbackM3uInputRef = useRef<HTMLInputElement>(null);
-
-  const handleTransitionComplete = (winningDeck: 'A' | 'B', nextTrack: Track, isFromLibrary: boolean) => {
-    const engine = AudioEngine.getInstance();
-    if (winningDeck === 'A') {
-      setDeckA(prev => ({ ...prev, track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || (engine.deckA.player.buffer ? Math.max(0, engine.deckA.player.buffer.duration - 15) : 0), peaks: nextTrack.waveformPeaks || engine.deckA.peaks }));
-      setDeckB(prev => ({ ...prev, isPlaying: false }));
-      setXfade(0);
-    } else {
-      setDeckB(prev => ({ ...prev, track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || (engine.deckB.player.buffer ? Math.max(0, engine.deckB.player.buffer.duration - 15) : 0), peaks: nextTrack.waveformPeaks || engine.deckB.peaks }));
-      setDeckA(prev => ({ ...prev, isPlaying: false }));
-      setXfade(1);
-    }
-    if (isFromLibrary) {
-      setLibrary(prev => prev.slice(1));
-    }
-  };
-
-  const handleTransitionStart = (winningDeck: 'A' | 'B', nextTrack: Track) => {
-    const engine = AudioEngine.getInstance();
-    if (winningDeck === 'A') {
-      setDeckA(prev => ({ ...prev, track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || (engine.deckA.player.buffer ? Math.max(0, engine.deckA.player.buffer.duration - 15) : 0), peaks: nextTrack.waveformPeaks || engine.deckA.peaks }));
-    } else {
-      setDeckB(prev => ({ ...prev, track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || (engine.deckB.player.buffer ? Math.max(0, engine.deckB.player.buffer.duration - 15) : 0), peaks: nextTrack.waveformPeaks || engine.deckB.peaks }));
-    }
-  };
-
-  const handleTransitionCancel = (cancelledDeck: 'A' | 'B') => {
-    if (cancelledDeck === 'A') {
-      setDeckA(prev => ({ ...prev, isPlaying: false }));
-    } else {
-      setDeckB(prev => ({ ...prev, isPlaying: false }));
-    }
-  };
-
-  useAutoMixer({
-    deckAState: deckA,
-    deckBState: deckB,
-    library,
-    isAutomixEnabled,
-    onTransitionStart: handleTransitionStart,
-    onTransitionComplete: handleTransitionComplete,
-    onTransitionCancel: handleTransitionCancel
-  });
+  const scrollRef = useRef<{ time: number, multiplier: number }>({ time: 0, multiplier: 1 });
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -131,73 +103,111 @@ export default function App() {
       if (isAutomixEnabled) {
         setXfade(engine.crossfader.fade.value as number);
       }
-    }, 50); // Polling faster (50ms) for ultra-smooth waveform tracking
+    }, 50);
     return () => clearInterval(interval);
   }, [isAutomixEnabled]);
 
-  // Debounced cache update for Deck A settings (peaks, intro, outro)
   useEffect(() => {
-    if (!deckA.track || (!deckA.peaks && deckA.introMarker === 0 && deckA.outroMarker === 0)) return;
+    if (!deckA.track || (!deckA.peaks && deckA.introMarker === 0 && deckA.outroMarker === 0 && deckA.segments.length === 0)) return;
     
     const trackId = deckA.track.id;
     const intro = deckA.introMarker;
     const outro = deckA.outroMarker;
     const peaks = deckA.peaks;
+    const segments = deckA.segments;
     
     const timeout = setTimeout(() => {
       db.tracks.update(trackId, {
         waveformPeaks: peaks || undefined,
+        segments: segments.length > 0 ? segments : undefined,
         introMarker: intro,
         outroMarker: outro
       }).catch(console.error);
     }, 1000);
     return () => clearTimeout(timeout);
-  }, [deckA.track?.id, deckA.peaks, deckA.introMarker, deckA.outroMarker]);
+  }, [deckA.track?.id, deckA.peaks, deckA.segments, deckA.introMarker, deckA.outroMarker]);
 
-  // Debounced cache update for Deck B settings
   useEffect(() => {
-    if (!deckB.track || (!deckB.peaks && deckB.introMarker === 0 && deckB.outroMarker === 0)) return;
+    if (!deckB.track || (!deckB.peaks && deckB.introMarker === 0 && deckB.outroMarker === 0 && deckB.segments.length === 0)) return;
     
     const trackId = deckB.track.id;
     const intro = deckB.introMarker;
     const outro = deckB.outroMarker;
     const peaks = deckB.peaks;
+    const segments = deckB.segments;
     
     const timeout = setTimeout(() => {
       db.tracks.update(trackId, {
         waveformPeaks: peaks || undefined,
+        segments: segments.length > 0 ? segments : undefined,
         introMarker: intro,
         outroMarker: outro
       }).catch(console.error);
     }, 1000);
     return () => clearTimeout(timeout);
-  }, [deckB.track?.id, deckB.peaks, deckB.introMarker, deckB.outroMarker]);
+  }, [deckB.track?.id, deckB.peaks, deckB.segments, deckB.introMarker, deckB.outroMarker]);
+
+  const handleRestoreSession = async () => {
+    const allTracks = await db.tracks.toArray();
+    setActiveSessionTrackIds(allTracks.map(t => t.id));
+    setSessionStarted(true);
+  };
 
   const handleLoadDirectory = async () => {
     if ('showDirectoryPicker' in window) {
       try {
         const handles = await loadLocalDirectory();
         if (handles.length > 0) {
-          const newTracks: TrackMetadata[] = handles.map((handle, i) => ({
-            id: `temp-${Date.now()}-${i}`,
-            filePath: handle.name,
-            fileName: handle.name,
-            title: handle.name.replace(/\.[^/.]+$/, ""),
-            artist: 'Unknown Artist',
-            bpm: 120,
-            duration: 0,
-            fileHandle: handle
-          }));
+          const newIds: string[] = [];
+          const newHandles: Record<string, { fileHandle: FileSystemFileHandle }> = {};
+          const unScanned: { id: string, fileHandle: FileSystemFileHandle, filePath: string }[] = [];
+
+          for (let i = 0; i < handles.length; i++) {
+             const handle = handles[i];
+             const cached = await db.tracks.where('fileName').equals(handle.name).first();
+             if (cached) {
+                newIds.push(cached.id);
+                newHandles[cached.id] = { fileHandle: handle };
+                if (!cached.isScanned || cached.duration === 0) {
+                  unScanned.push({ id: cached.id, fileHandle: handle, filePath: handle.name });
+                }
+             } else {
+                const id = `temp-${Date.now()}-${i}`;
+                await db.tracks.put({
+                  id,
+                  filePath: handle.name,
+                  fileName: handle.name,
+                  title: handle.name.replace(/\.[^/.]+$/, ""),
+                  artist: 'Unknown Artist',
+                  bpm: 120,
+                  duration: 0
+                });
+                newIds.push(id);
+                newHandles[id] = { fileHandle: handle };
+                unScanned.push({ id, fileHandle: handle, filePath: handle.name });
+             }
+          }
           
-          await db.tracks.bulkPut(newTracks);
-          
-          // Background scan
-          handles.forEach(handle => {
-            metadataScanner.scanFileHandle(handle);
-          });
-          
+          setSessionHandles(prev => ({ ...prev, ...newHandles }));
+          setActiveSessionTrackIds(prev => Array.from(new Set([...prev, ...newIds])));
           setSessionStarted(true);
           setActiveTab('tracks');
+          
+          const processBackgroundScan = async () => {
+            console.log(`[App] Beginning background scan for ${unScanned.length} items`);
+            for (const t of unScanned) {
+              try {
+                console.log(`[App] Calling metadataScanner for ${t.filePath}`);
+                await metadataScanner.scanFileHandle(t.fileHandle, t.filePath, undefined, t.id);
+                console.log(`[App] Successfully scanned ${t.filePath}`);
+              } catch (error) {
+                const errMsg = error instanceof Error ? error.message : String(error);
+                console.error("[App] Background scan failed:", errMsg);
+              }
+            }
+            console.log(`[App] Background scan loop finished`);
+          };
+          processBackgroundScan();
           return;
         }
       } catch (e) {
@@ -207,7 +217,7 @@ export default function App() {
     fallbackDirInputRef.current?.click();
   };
 
-  const handleFallbackFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFallbackFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
     const audioFiles = files.filter(f => ['audio/mpeg', 'audio/wav', 'audio/flac', 'audio/ogg'].includes(f.type) || f.name.match(/\.(mp3|wav|flac|ogg)$/i));
@@ -217,44 +227,106 @@ export default function App() {
       return;
     }
 
-    const newTracks: TrackMetadata[] = audioFiles.map((file, i) => ({
-      id: `fallback-${Date.now()}-${i}`,
-      filePath: file.name,
-      fileName: file.name,
-      title: file.name.replace(/\.[^/.]+$/, ""),
-      artist: 'Local File',
-      bpm: 120,
-      duration: 0,
-      rawFile: file
-    }));
-    
-    db.tracks.bulkPut(newTracks).catch(console.error);
+    const newIds: string[] = [];
+    const newHandles: Record<string, { rawFile: File }> = {};
+    const unScanned: { id: string, rawFile: File, filePath: string }[] = [];
+
+    for (let i = 0; i < audioFiles.length; i++) {
+      const file = audioFiles[i];
+      const id = `fallback-${Date.now()}-${i}`;
+      await db.tracks.put({
+        id,
+        filePath: file.name,
+        fileName: file.name,
+        title: file.name.replace(/\.[^/.]+$/, ""),
+        artist: 'Local File',
+        bpm: 120,
+        duration: 0
+      });
+      newIds.push(id);
+      newHandles[id] = { rawFile: file };
+      unScanned.push({ id, rawFile: file, filePath: file.name });
+    }
+
+    setSessionHandles(prev => ({ ...prev, ...newHandles }));
+    setActiveSessionTrackIds(prev => Array.from(new Set([...prev, ...newIds])));
     setSessionStarted(true);
     setActiveTab('tracks');
+
+    const processFallbackBackgroundScan = async () => {
+      for (const t of unScanned) {
+        try {
+          await metadataScanner.scanFileHandle(undefined, t.filePath, t.rawFile, t.id);
+        } catch (error) {
+          const errMsg = error instanceof Error ? error.message : String(error);
+          console.error("Fallback background scan failed:", errMsg);
+        }
+      }
+    };
+    processFallbackBackgroundScan();
   };
 
-  const handlePreScanAll = () => {
-    const unscannedDb = dbTracks.filter(t => t.fileHandle && !t.isScanned);
-    unscannedDb.forEach(t => {
-      if (t.fileHandle) {
-        metadataScanner.scanFileHandle(t.fileHandle, t.filePath);
-      }
-    });
+  const handlePreScanAll = async () => {
+    console.log(`[App] Manual scan triggered`);
+    const unscannedSession = sessionTracks.filter(t => (t.fileHandle || t.rawFile) && (!t.isScanned || String(t.duration) === '0' || String(t.duration) === '0:00'));
+    const unscannedLibrary = library.filter(t => t.rawFile && (!('isScanned' in t && (t as unknown as TrackMetadata).isScanned) || String(t.duration) === '0' || String(t.duration) === '0:00'));
 
-    const unscannedLibrary = library.filter(t => t.rawFile && (!('isScanned' in t) || !(t as unknown as TrackMetadata).isScanned));
-    unscannedLibrary.forEach(t => {
+    console.log(`[App] Found ${unscannedSession.length} unscanned session tracks and ${unscannedLibrary.length} unscanned library tracks`);
+
+    if (unscannedSession.length === 0 && unscannedLibrary.length === 0) {
+      alert("All tracks are already fully scanned!");
+      return;
+    }
+
+    for (const t of unscannedSession) {
+      if (t.fileHandle || t.rawFile) {
+        const filePath = t.filePath || t.fileHandle?.name || t.rawFile?.name || 'unknown';
+        try {
+          console.log(`[App] Requesting manual scan for ${filePath}`);
+          await metadataScanner.scanFileHandle(t.fileHandle, filePath, t.rawFile, t.id);
+          console.log(`[App] Finished manual scan for ${filePath}`);
+        } catch (error) {
+          const errMsg = error instanceof Error ? error.message : String(error);
+          console.error("[App] Manual scan failed:", errMsg);
+          alert(`Scan failed for ${filePath}: ${errMsg}`);
+        }
+      }
+    }
+
+    for (const t of unscannedLibrary) {
       if (t.rawFile) {
-        metadataScanner.scanFileHandle(undefined, t.rawFile.name, t.rawFile).then(scanned => {
+        try {
+          const scanned = await metadataScanner.scanFileHandle(undefined, t.rawFile.name, t.rawFile, t.id);
           setLibrary(prev => prev.map(lt => lt.id === t.id ? { ...lt, ...scanned, duration: formatDuration(scanned.duration) } : lt));
-        }).catch(console.error);
+        } catch (error) {
+          const errMsg = error instanceof Error ? error.message : String(error);
+          console.error("Library scan failed:", errMsg);
+          alert(`Scan failed for ${t.rawFile.name}: ${errMsg}`);
+        }
       }
-    });
+    }
   };
 
-  const applyM3U = (content: string) => {
+  const handleClearCache = async () => {
+    if (window.confirm("Are you sure you want to clear the entire library cache? This will remove all scanned tracks, waveforms, and markers.")) {
+      try {
+        await db.tracks.clear();
+        setActiveSessionTrackIds([]);
+        setSessionHandles({});
+        setSessionStarted(false);
+      } catch (e) {
+        console.error("Failed to clear cache", e);
+      }
+    }
+  };
+
+  const applyM3U = async (content: string) => {
     const paths = parseM3U(content);
+    const dbTracks = await db.tracks.toArray();
     const newLibrary = paths.map(path => {
       const filename = path.split('\\').pop()?.split('/').pop();
+      const sessionMatch = sessionTracks.find(t => t.fileName === filename || t.filePath === path);
+      if (sessionMatch) return sessionMatch as unknown as Track;
       const dbMatch = dbTracks.find(t => t.fileName === filename || t.filePath === path);
       if (dbMatch) return dbMatch as unknown as Track;
       return library.find(t => t.fileHandle?.name === filename || t.title === filename || t.url === path);
@@ -348,13 +420,12 @@ export default function App() {
       }
 
       let track = inputTrack as Track;
-
       const needsScan = !('isScanned' in inputTrack) || !inputTrack.isScanned;
 
       if (needsScan && (inputTrack.fileHandle || inputTrack.rawFile)) {
         try {
           const filePath = ('filePath' in inputTrack) ? inputTrack.filePath : (inputTrack.fileHandle?.name || inputTrack.rawFile?.name);
-          const scanned = await metadataScanner.scanFileHandle(inputTrack.fileHandle, filePath, inputTrack.rawFile);
+          const scanned = await metadataScanner.scanFileHandle(inputTrack.fileHandle, filePath, inputTrack.rawFile, inputTrack.id);
           track = { ...(scanned as unknown as Track), url: (inputTrack as Track).url };
         } catch (e) {
           console.error("Failed to scan metadata before load:", e);
@@ -383,10 +454,15 @@ export default function App() {
         setPitchA(1.0);
         engine.deckA.setPlaybackRate(1.0);
         
+        const segments = track.segments || engine.deckA.segments;
         const intro = track.introMarker !== undefined ? track.introMarker : 0;
-        const outro = track.outroMarker !== undefined ? track.outroMarker : (engine.deckA.player.buffer ? Math.max(0, engine.deckA.player.buffer.duration - 15) : 0);
+        let outro = track.outroMarker;
+        if (outro === undefined) {
+          const outroSeg = segments.find(s => s.type === 'outro');
+          outro = outroSeg ? outroSeg.start : (engine.deckA.player.buffer ? Math.max(0, engine.deckA.player.buffer.duration - 15) : 0);
+        }
         
-        setDeckA(prev => ({ ...prev, peaks: track.waveformPeaks || engine.deckA.peaks, introMarker: intro, outroMarker: outro }));
+        setDeckA(prev => ({ ...prev, peaks: track.waveformPeaks || engine.deckA.peaks, segments, introMarker: intro, outroMarker: outro }));
       } else {
         setDeckB(prev => ({ ...prev, track }));
         await engine.deckB.loadTrack(trackUrl);
@@ -395,10 +471,15 @@ export default function App() {
         setPitchB(1.0);
         engine.deckB.setPlaybackRate(1.0);
 
+        const segments = track.segments || engine.deckB.segments;
         const intro = track.introMarker !== undefined ? track.introMarker : 0;
-        const outro = track.outroMarker !== undefined ? track.outroMarker : (engine.deckB.player.buffer ? Math.max(0, engine.deckB.player.buffer.duration - 15) : 0);
+        let outro = track.outroMarker;
+        if (outro === undefined) {
+          const outroSeg = segments.find(s => s.type === 'outro');
+          outro = outroSeg ? outroSeg.start : (engine.deckB.player.buffer ? Math.max(0, engine.deckB.player.buffer.duration - 15) : 0);
+        }
 
-        setDeckB(prev => ({ ...prev, peaks: track.waveformPeaks || engine.deckB.peaks, introMarker: intro, outroMarker: outro }));
+        setDeckB(prev => ({ ...prev, peaks: track.waveformPeaks || engine.deckB.peaks, segments, introMarker: intro, outroMarker: outro }));
       }
     } catch (err) {
       console.error("Audio load error:", err);
@@ -426,6 +507,19 @@ export default function App() {
         engine.deckB.play();
         setDeckB(prev => ({ ...prev, isPlaying: true }));
       }
+    }
+  };
+
+  const handleMuteToggle = (deckId: 'A' | 'B') => {
+    const engine = AudioEngine.getInstance();
+    if (deckId === 'A') {
+      const newMute = !muteA;
+      setMuteA(newMute);
+      engine.deckA.player.mute = newMute;
+    } else {
+      const newMute = !muteB;
+      setMuteB(newMute);
+      engine.deckB.player.mute = newMute;
     }
   };
 
@@ -501,20 +595,34 @@ export default function App() {
   const handlePitchChange = (deckId: 'A' | 'B', newPitch: number) => {
     const audio = AudioEngine.getInstance();
     if (deckId === 'A') {
-      setPitchA(newPitch);
-      audio.deckA.setPlaybackRate(newPitch);
+      let finalPitch = newPitch;
+      if (newPitch !== 1.0 && audio.deckA.originalBpm > 0) {
+        const rawBpm = newPitch * audio.deckA.originalBpm;
+        const snappedBpm = Math.round(rawBpm * 10) / 10;
+        finalPitch = snappedBpm / audio.deckA.originalBpm;
+      }
+
+      setPitchA(finalPitch);
+      audio.deckA.setPlaybackRate(finalPitch);
       
       if (syncB || masterDeck === 'A') {
         const newBpmA = audio.deckA.currentBpm;
         if (audio.deckB.originalBpm > 0) {
           const requiredPitchB = newBpmA / audio.deckB.originalBpm;
-          setPitchB(requiredPitchB);
+          setPitchB(requiredPitchB); // Let sync have exact floating point, or should we snap it too? We'll let it be exact to match BPM
           audio.deckB.setPlaybackRate(requiredPitchB);
         }
       }
     } else {
-      setPitchB(newPitch);
-      audio.deckB.setPlaybackRate(newPitch);
+      let finalPitch = newPitch;
+      if (newPitch !== 1.0 && audio.deckB.originalBpm > 0) {
+        const rawBpm = newPitch * audio.deckB.originalBpm;
+        const snappedBpm = Math.round(rawBpm * 10) / 10;
+        finalPitch = snappedBpm / audio.deckB.originalBpm;
+      }
+
+      setPitchB(finalPitch);
+      audio.deckB.setPlaybackRate(finalPitch);
       
       if (syncA || masterDeck === 'B') {
         const newBpmB = audio.deckB.currentBpm;
@@ -524,6 +632,57 @@ export default function App() {
           audio.deckA.setPlaybackRate(requiredPitchA);
         }
       }
+    }
+  };
+
+  const handlePitchNudge = (deckId: 'A' | 'B', bpmDelta: number) => {
+    const audio = AudioEngine.getInstance();
+    const deck = deckId === 'A' ? audio.deckA : audio.deckB;
+    const currentPitch = deckId === 'A' ? pitchA : pitchB;
+    
+    if (deck.originalBpm > 0) {
+      const currentBpm = deck.originalBpm * currentPitch;
+      const targetBpm = currentBpm + bpmDelta;
+      let newPitch = targetBpm / deck.originalBpm;
+      newPitch = Math.max(0.84, Math.min(1.16, newPitch));
+      handlePitchChange(deckId, newPitch);
+    }
+  };
+
+  const handleSliderWheel = (e: React.WheelEvent<HTMLInputElement>) => {
+    if (e.currentTarget.type !== 'range') return;
+    e.preventDefault();
+    const target = e.currentTarget;
+    const min = parseFloat(target.min || "0");
+    const max = parseFloat(target.max || "100");
+    const baseStep = parseFloat(target.step || "1");
+    
+    if (isNaN(baseStep)) return;
+
+    const now = Date.now();
+    const timeSinceLast = now - scrollRef.current.time;
+    if (timeSinceLast < 50) {
+      scrollRef.current.multiplier = Math.min(20, scrollRef.current.multiplier + 1);
+    } else if (timeSinceLast > 250) {
+      scrollRef.current.multiplier = 1;
+    }
+    scrollRef.current.time = now;
+    
+    // Scale step by multiplier, cap max step at 10% of total range to avoid wild jumps
+    let effectiveStep = baseStep * scrollRef.current.multiplier;
+    const maxAllowedStep = (max - min) * 0.1;
+    if (effectiveStep > maxAllowedStep) effectiveStep = maxAllowedStep;
+    
+    const currentVal = parseFloat(target.value);
+    const direction = e.deltaY > 0 ? -1 : 1;
+    let nextVal = currentVal + (direction * effectiveStep);
+    nextVal = Math.max(min, Math.min(max, nextVal));
+    
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+    if (nativeInputValueSetter) {
+      nativeInputValueSetter.call(target, nextVal.toString());
+      target.dispatchEvent(new Event('input', { bubbles: true }));
+      target.dispatchEvent(new Event('change', { bubbles: true }));
     }
   };
 
@@ -589,7 +748,7 @@ export default function App() {
     } else if (fxType === 'roll') {
       const newState = !currentFx.rollOn;
       setFx(prev => ({ ...prev, rollOn: newState }));
-      deck.setRoll(newState, 8); // Default 1/8th roll
+      deck.setRoll(newState, 8);
     } else if (fxType === 'siren') {
       const newState = !currentFx.sirenOn;
       setFx(prev => ({ ...prev, sirenOn: newState }));
@@ -622,7 +781,6 @@ export default function App() {
   const handleMouseMove = (e: MouseEvent) => {
     if (!dragRef.current) return;
     const newPct = (e.clientY / window.innerHeight) * 100;
-    // Limit between 20% and 80%
     setMixerHeightPct(Math.min(80, Math.max(20, newPct)));
   };
 
@@ -649,30 +807,114 @@ export default function App() {
     setIsLibraryMaximized(!isLibraryMaximized);
   };
 
+  const getNextTrack = (currentTrackId?: string): Track | null => {
+    if (displayTracks.length === 0) return null;
+    if (!currentTrackId) return displayTracks[0] as Track;
+    const currentIndex = displayTracks.findIndex(t => t.id === currentTrackId);
+    if (currentIndex === -1) return displayTracks[0] as Track;
+    const nextIndex = (currentIndex + 1) % displayTracks.length;
+    return displayTracks[nextIndex] as Track;
+  };
+
+  const handleTransitionComplete = (winningDeck: 'A' | 'B', nextTrack: Track) => {
+    const engine = AudioEngine.getInstance();
+    if (winningDeck === 'A') {
+      const segments = nextTrack.segments || engine.deckA.segments;
+      const defaultOutro = segments.find(s => s.type === 'outro')?.start || (engine.deckA.player.buffer ? Math.max(0, engine.deckA.player.buffer.duration - 15) : 0);
+      setDeckA(prev => ({ ...prev, track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || defaultOutro, peaks: nextTrack.waveformPeaks || engine.deckA.peaks, segments }));
+      setDeckB(prev => ({ ...prev, isPlaying: false }));
+      setXfade(0);
+
+      // Pre-load next track for continuous automix
+      if (isAutomixEnabled) {
+        const next = getNextTrack(nextTrack.id);
+        if (next) handleLoadTrack(next, 'B');
+      }
+    } else {
+      const segments = nextTrack.segments || engine.deckB.segments;
+      const defaultOutro = segments.find(s => s.type === 'outro')?.start || (engine.deckB.player.buffer ? Math.max(0, engine.deckB.player.buffer.duration - 15) : 0);
+      setDeckB(prev => ({ ...prev, track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || defaultOutro, peaks: nextTrack.waveformPeaks || engine.deckB.peaks, segments }));
+      setDeckA(prev => ({ ...prev, isPlaying: false }));
+      setXfade(1);
+
+      // Pre-load next track for continuous automix
+      if (isAutomixEnabled) {
+        const next = getNextTrack(nextTrack.id);
+        if (next) handleLoadTrack(next, 'A');
+      }
+    }
+  };
+
+  const handleTransitionStart = (winningDeck: 'A' | 'B', nextTrack: Track) => {
+    const engine = AudioEngine.getInstance();
+    if (winningDeck === 'A') {
+      const segments = nextTrack.segments || engine.deckA.segments;
+      const defaultOutro = segments.find(s => s.type === 'outro')?.start || (engine.deckA.player.buffer ? Math.max(0, engine.deckA.player.buffer.duration - 15) : 0);
+      setDeckA(prev => ({ ...prev, track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || defaultOutro, peaks: nextTrack.waveformPeaks || engine.deckA.peaks, segments }));
+    } else {
+      const segments = nextTrack.segments || engine.deckB.segments;
+      const defaultOutro = segments.find(s => s.type === 'outro')?.start || (engine.deckB.player.buffer ? Math.max(0, engine.deckB.player.buffer.duration - 15) : 0);
+      setDeckB(prev => ({ ...prev, track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || defaultOutro, peaks: nextTrack.waveformPeaks || engine.deckB.peaks, segments }));
+    }
+  };
+
+  const handleTransitionCancel = (cancelledDeck: 'A' | 'B') => {
+    if (cancelledDeck === 'A') {
+      setDeckA(prev => ({ ...prev, isPlaying: false }));
+    } else {
+      setDeckB(prev => ({ ...prev, isPlaying: false }));
+    }
+  };
+
+  useEffect(() => {
+    if (!isAutomixEnabled) return;
+    
+    // Use a timeout to avoid immediate state loops during React renders
+    const timer = setTimeout(() => {
+      // If one deck has a track and is playing, and the other is empty, auto-load the next track into the empty deck
+      if (deckA.track && !deckB.track) {
+        const next = getNextTrack(deckA.track.id);
+        if (next) handleLoadTrack(next, 'B');
+      } else if (deckB.track && !deckA.track) {
+        const next = getNextTrack(deckB.track.id);
+        if (next) handleLoadTrack(next, 'A');
+      }
+    }, 100);
+    
+    return () => clearTimeout(timer);
+  }, [isAutomixEnabled, deckA.track, deckB.track]);
+
+  useAutoMixer({
+    deckAState: deckA,
+    deckBState: deckB,
+    library: displayTracks as Track[],
+    isAutomixEnabled,
+    onTransitionStart: handleTransitionStart,
+    onTransitionComplete: handleTransitionComplete,
+    onTransitionCancel: handleTransitionCancel,
+    onPitchChange: handlePitchChange
+  });
+
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-200 font-sans overflow-hidden select-none">
       
-      {/* Hidden fallback inputs */}
       {/* @ts-expect-error directory attribute is non-standard but heavily supported */}
       <input type="file" ref={fallbackDirInputRef} style={{ display: 'none' }} multiple webkitdirectory="true" directory="true" onChange={handleFallbackFiles} />
       <input type="file" ref={fallbackM3uInputRef} style={{ display: 'none' }} accept=".m3u,.m3u8" onChange={handleFallbackM3u} />
 
-      {/* MAIN CONTENT - HORIZONTAL SPLIT */}
       <div className="flex-1 flex flex-col min-h-0">
         
-        {/* MIXER CONSOLE (TOP HALF) */}
         <div 
           className="flex-[0_0_auto] min-h-0 p-2 sm:p-4 lg:p-6 2xl:p-8 bg-slate-950 flex justify-center items-start gap-2 sm:gap-4 lg:gap-6 2xl:gap-8 shrink-0 shadow-xl overflow-y-auto overflow-x-auto"
           style={{ height: isLibraryMaximized ? '0px' : `${mixerHeightPct}%`, display: isLibraryMaximized ? 'none' : 'flex' }}
         >
           
-          {/* Deck A */}
           <div className={`flex-1 min-w-0 w-full p-3 sm:p-4 lg:p-5 rounded-xl border flex flex-col gap-2 transition-colors ${deckA.isPlaying ? 'bg-slate-900/80 border-blue-500/30' : 'bg-slate-900/40 border-slate-800/80'}`}>
             
-            {/* 1. Waveform */}
             <div className="h-10 sm:h-12 lg:h-16 w-full shrink-0 rounded overflow-hidden shadow-inner bg-slate-950/50">
               <Waveform 
                 peaks={deckA.peaks}
+                segments={deckA.segments}
                 currentTime={progressA.current || 0}
                 duration={progressA.max || 0}
                 introMarker={deckA.introMarker}
@@ -683,15 +925,22 @@ export default function App() {
               />
             </div>
 
-            {/* 2. Transport & Metadata */}
             <div className="flex items-center bg-slate-950/50 p-2 sm:p-3 rounded-lg border border-slate-800/50 gap-2 sm:gap-4 mt-auto">
-              <button 
-                disabled={!deckA.track}
-                onClick={() => toggleDeck('A')}
-                className="w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white shadow-inner border border-slate-700/50 shrink-0"
-              >
-                {deckA.isPlaying ? <Square size={18} fill="currentColor" className="text-blue-500" /> : <Play size={20} fill="currentColor" className="ml-1" />}
-              </button>
+              <div className="flex flex-col items-center gap-2 shrink-0">
+                <button 
+                  disabled={!deckA.track}
+                  onClick={() => toggleDeck('A')}
+                  className="w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white shadow-inner border border-slate-700/50 shrink-0"
+                >
+                  {deckA.isPlaying ? <Square size={18} fill="currentColor" className="text-blue-500" /> : <Play size={20} fill="currentColor" className="ml-1" />}
+                </button>
+                <button 
+                  onClick={() => handleMuteToggle('A')}
+                  className={`w-full py-0.5 px-2 rounded-full text-[8px] sm:text-[9px] font-bold tracking-widest transition-colors flex items-center justify-center border ${muteA ? 'bg-red-600 text-white border-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
+                >
+                  MUTE
+                </button>
+              </div>
 
               <div className="flex-1 min-w-0 flex flex-col justify-center">
                 <div className="flex justify-between items-end mb-0.5">
@@ -717,16 +966,36 @@ export default function App() {
               <div className="flex gap-2 sm:gap-3 items-center shrink-0 border-l border-slate-800/50 pl-2 sm:pl-3">
                 <div className="flex flex-col items-center gap-1 w-20 sm:w-24">
                   <span className="text-[8px] sm:text-[9px] text-slate-400 font-bold tracking-widest leading-none">PITCH</span>
-                  <input 
-                    type="range" 
-                    min="0.84" 
-                    max="1.16" 
-                    step="0.001" 
-                    value={pitchA} 
-                    onChange={(e) => handlePitchChange('A', parseFloat(e.target.value))} 
-                    onDoubleClick={() => handlePitchChange('A', 1.0)}
-                    className="w-full h-1 bg-slate-800 rounded-full appearance-none cursor-pointer accent-blue-500 shadow-inner" 
-                  />
+                  <div className="flex items-center w-full gap-1">
+                    <button onClick={() => handlePitchNudge('A', -0.1)} className="text-[10px] text-slate-500 hover:text-slate-200 font-bold leading-none select-none px-1 py-0.5 rounded hover:bg-slate-800">-</button>
+                    <input 
+                      type="range" 
+                      min="0.84" 
+                      max="1.16" 
+                      step="any" 
+                      value={pitchA} 
+                      onChange={(e) => handlePitchChange('A', parseFloat(e.target.value))} 
+                      onDoubleClick={() => handlePitchChange('A', 1.0)}
+                      onWheel={(e) => {
+                        e.preventDefault();
+                        const now = Date.now();
+                        const timeSinceLast = now - scrollRef.current.time;
+                        if (timeSinceLast < 50) {
+                          scrollRef.current.multiplier = Math.min(20, scrollRef.current.multiplier + 1);
+                        } else if (timeSinceLast > 250) {
+                          scrollRef.current.multiplier = 1;
+                        }
+                        scrollRef.current.time = now;
+                        
+                        let amt = 0.1 * scrollRef.current.multiplier;
+                        // cap max jump to 2.0 BPM at once so it doesn't go crazy
+                        if (amt > 2.0) amt = 2.0;
+                        handlePitchNudge('A', e.deltaY > 0 ? -amt : amt);
+                      }}
+                      className="flex-1 w-full h-1 bg-slate-800 rounded-full appearance-none cursor-pointer accent-blue-500 shadow-inner min-w-0" 
+                    />
+                    <button onClick={() => handlePitchNudge('A', 0.1)} className="text-[10px] text-slate-500 hover:text-slate-200 font-bold leading-none select-none px-1 py-0.5 rounded hover:bg-slate-800">+</button>
+                  </div>
                   <span className="text-[8px] sm:text-[9px] font-mono text-slate-500 leading-none">{((pitchA - 1) * 100).toFixed(1)}%</span>
                   
                   <div className="flex w-full gap-1 mt-0.5">
@@ -749,9 +1018,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* 4. Parametric FX Bay */}
             <div className="flex gap-2 sm:gap-3 p-2 sm:p-3 bg-slate-900/80 rounded-lg border border-slate-800/80">
-              {/* Echo */}
               <div className="flex flex-col gap-1.5 sm:gap-2 flex-1 min-w-0 border-r border-slate-800/50 pr-2 sm:pr-3">
                 <div className="flex justify-between items-center">
                   <span className="text-[9px] sm:text-[10px] font-bold tracking-widest text-blue-400">ECHO</span>
@@ -762,11 +1029,11 @@ export default function App() {
                 </div>
                 <div className="flex items-center gap-1 sm:gap-2">
                   <span className="text-[7px] sm:text-[8px] text-slate-500 w-5 sm:w-7">TIME</span>
-                  <input type="range" min="0.05" max="1" step="0.01" value={fxA.delayTime} onChange={(e) => handleFxParamChange('A', 'delay', 'time', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('A', 'delay', 'time', 0.25)} className="flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400" />
+                  <input type="range" min="0.05" max="1" step="0.01" value={fxA.delayTime} onChange={(e) => handleFxParamChange('A', 'delay', 'time', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('A', 'delay', 'time', 0.25)} onWheel={handleSliderWheel} className="flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400" />
                 </div>
                 <div className="flex items-center gap-1 sm:gap-2">
                   <span className="text-[7px] sm:text-[8px] text-slate-500 w-5 sm:w-7">FDBK</span>
-                  <input type="range" min="0" max="0.95" step="0.01" value={fxA.delayFeedback} onChange={(e) => handleFxParamChange('A', 'delay', 'feedback', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('A', 'delay', 'feedback', 0.5)} className="flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400" />
+                  <input type="range" min="0" max="0.95" step="0.01" value={fxA.delayFeedback} onChange={(e) => handleFxParamChange('A', 'delay', 'feedback', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('A', 'delay', 'feedback', 0.5)} onWheel={handleSliderWheel} className="flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400" />
                 </div>
                 <div className="flex gap-1 justify-end -mt-1 flex-wrap">
                   <button onClick={() => handleFxParamChange('A', 'delay', 'time', Math.min(1, 60 / (bpmA || 120)))} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">1/4</button>
@@ -775,7 +1042,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Reverb */}
               <div className="flex flex-col gap-1.5 sm:gap-2 flex-1 min-w-0 border-r border-slate-800/50 pr-2 sm:pr-3">
                 <div className="flex justify-between items-center">
                   <span className="text-[9px] sm:text-[10px] font-bold tracking-widest text-cyan-400">REVERB</span>
@@ -786,11 +1052,10 @@ export default function App() {
                 </div>
                 <div className="flex items-center gap-1 sm:gap-2 mt-auto mb-0.5 sm:mb-1">
                   <span className="text-[7px] sm:text-[8px] text-slate-500 w-5 sm:w-7">SIZE</span>
-                  <input type="range" min="0" max="1" step="0.01" value={fxA.reverbSize} onChange={(e) => handleFxParamChange('A', 'reverb', 'size', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('A', 'reverb', 'size', 0.7)} className="flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400" />
+                  <input type="range" min="0" max="1" step="0.01" value={fxA.reverbSize} onChange={(e) => handleFxParamChange('A', 'reverb', 'size', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('A', 'reverb', 'size', 0.7)} onWheel={handleSliderWheel} className="flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400" />
                 </div>
               </div>
 
-              {/* Phaser */}
               <div className="flex flex-col gap-1.5 sm:gap-2 flex-1 min-w-0">
                 <div className="flex justify-between items-center">
                   <span className="text-[9px] sm:text-[10px] font-bold tracking-widest text-fuchsia-400">PHASER</span>
@@ -801,7 +1066,7 @@ export default function App() {
                 </div>
                 <div className="flex items-center gap-1 sm:gap-2 mt-auto mb-0.5 sm:mb-1">
                   <span className="text-[7px] sm:text-[8px] text-slate-500 w-5 sm:w-7">RATE</span>
-                  <input type="range" min="0.1" max="10" step="0.1" value={fxA.phaserRate} onChange={(e) => handleFxParamChange('A', 'phaser', 'rate', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('A', 'phaser', 'rate', 0.5)} className="flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400" />
+                  <input type="range" min="0.1" max="10" step="0.1" value={fxA.phaserRate} onChange={(e) => handleFxParamChange('A', 'phaser', 'rate', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('A', 'phaser', 'rate', 0.5)} onWheel={handleSliderWheel} className="flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400" />
                 </div>
                 <div className="flex gap-1 justify-end -mt-1 flex-wrap">
                   <button onClick={() => handleFxParamChange('A', 'phaser', 'rate', Math.min(10, ((bpmA || 120) / 60) * 0.25))} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">4 BARS</button>
@@ -810,10 +1075,8 @@ export default function App() {
                 </div>
               </div>
             </div>
-
           </div>
 
-          {/* Central Mixer Controls */}
           <div className="w-56 sm:w-64 lg:w-72 flex flex-col p-2 sm:p-4 rounded-xl border border-slate-800/80 bg-slate-900/60 shadow-inner">
             <div className="flex w-full justify-between items-start px-2 mb-2 sm:mb-4">
               <div className="text-[10px] sm:text-xs font-bold text-slate-500 tracking-wider mt-1">CH A</div>
@@ -834,11 +1097,10 @@ export default function App() {
             </div>
 
             <div className="flex justify-between w-full flex-1 gap-2 sm:gap-4">
-              {/* CH A STRIP */}
               <div className="flex flex-1 gap-1 sm:gap-2">
                 <div className="flex flex-col items-center h-full justify-center pb-4">
                   <div className="h-32 sm:h-40 w-4 flex items-center justify-center relative">
-                    <input type="range" min="0" max="1.5" step="0.01" value={volA} onChange={(e) => handleVolumeChange('A', parseFloat(e.target.value))} onDoubleClick={() => handleVolumeChange('A', 1.0)} className="w-32 sm:w-40 h-1.5 absolute rotate-270 -rotate-90 appearance-none cursor-pointer accent-blue-500 bg-slate-800 rounded-full" />
+                    <input type="range" min="0" max="1.5" step="0.01" value={volA} onChange={(e) => handleVolumeChange('A', parseFloat(e.target.value))} onDoubleClick={() => handleVolumeChange('A', 1.0)} onWheel={handleSliderWheel} className="w-32 sm:w-40 h-1.5 absolute rotate-270 -rotate-90 appearance-none cursor-pointer accent-blue-500 bg-slate-800 rounded-full" />
                   </div>
                   <span className="text-[8px] sm:text-[9px] mt-2 font-bold text-slate-500">VOL</span>
                 </div>
@@ -851,10 +1113,9 @@ export default function App() {
                   ].map(({ band, label, value, handler }) => (
                     <div key={`eqa-${band}`} className="flex flex-col gap-1">
                       <span className="text-[8px] sm:text-[9px] text-slate-400 font-bold">{label}</span>
-                      <input type="range" min="-24" max="6" step="0.1" value={value} onChange={(e) => handler('A', band as 'high'|'mid'|'low', parseFloat(e.target.value))} onDoubleClick={() => handler('A', band as 'high'|'mid'|'low', 0)} className="w-full h-1 sm:h-1.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-slate-300 shadow-inner" />
+                      <input type="range" min="-24" max="6" step="0.1" value={value} onChange={(e) => handler('A', band as 'high'|'mid'|'low', parseFloat(e.target.value))} onDoubleClick={() => handler('A', band as 'high'|'mid'|'low', 0)} onWheel={handleSliderWheel} className="w-full h-1 sm:h-1.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-slate-300 shadow-inner" />
                     </div>
                   ))}
-                  {/* Performance Pads */}
                   <div className="flex gap-1 mt-auto mb-1">
                     <button
                       onMouseDown={() => handleFxToggle('A', 'roll')}
@@ -882,16 +1143,15 @@ export default function App() {
 
                   <div className="flex flex-col gap-1 mt-1 mb-1">
                     <span className="text-[8px] sm:text-[9px] text-blue-400 font-bold">FLT</span>
-                    <input type="range" min="-100" max="100" step="1" value={filterA} onChange={(e) => handleFilterChange('A', parseFloat(e.target.value))} onDoubleClick={() => handleFilterChange('A', 0)} className="w-full h-2 sm:h-2.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-blue-500 shadow-inner" />
+                    <input type="range" min="-100" max="100" step="1" value={filterA} onChange={(e) => handleFilterChange('A', parseFloat(e.target.value))} onDoubleClick={() => handleFilterChange('A', 0)} onWheel={handleSliderWheel} className="w-full h-2 sm:h-2.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-blue-500 shadow-inner" />
                   </div>
                 </div>
               </div>
 
-              {/* CH B STRIP */}
               <div className="flex flex-1 gap-1 sm:gap-2 flex-row-reverse">
                 <div className="flex flex-col items-center h-full justify-center pb-4">
                   <div className="h-32 sm:h-40 w-4 flex items-center justify-center relative">
-                    <input type="range" min="0" max="1.5" step="0.01" value={volB} onChange={(e) => handleVolumeChange('B', parseFloat(e.target.value))} onDoubleClick={() => handleVolumeChange('B', 1.0)} className="w-32 sm:w-40 h-1.5 absolute rotate-270 -rotate-90 appearance-none cursor-pointer accent-cyan-500 bg-slate-800 rounded-full" />
+                    <input type="range" min="0" max="1.5" step="0.01" value={volB} onChange={(e) => handleVolumeChange('B', parseFloat(e.target.value))} onDoubleClick={() => handleVolumeChange('B', 1.0)} onWheel={handleSliderWheel} className="w-32 sm:w-40 h-1.5 absolute rotate-270 -rotate-90 appearance-none cursor-pointer accent-cyan-500 bg-slate-800 rounded-full" />
                   </div>
                   <span className="text-[8px] sm:text-[9px] mt-2 font-bold text-slate-500">VOL</span>
                 </div>
@@ -904,10 +1164,9 @@ export default function App() {
                   ].map(({ band, label, value, handler }) => (
                     <div key={`eqb-${band}`} className="flex flex-col gap-1 items-end w-full">
                       <span className="text-[8px] sm:text-[9px] text-slate-400 font-bold">{label}</span>
-                      <input type="range" min="-24" max="6" step="0.1" value={value} onChange={(e) => handler('B', band as 'high'|'mid'|'low', parseFloat(e.target.value))} onDoubleClick={() => handler('B', band as 'high'|'mid'|'low', 0)} className="w-full h-1 sm:h-1.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-slate-300 shadow-inner rotate-180" />
+                      <input type="range" min="-24" max="6" step="0.1" value={value} onChange={(e) => handler('B', band as 'high'|'mid'|'low', parseFloat(e.target.value))} onDoubleClick={() => handler('B', band as 'high'|'mid'|'low', 0)} onWheel={handleSliderWheel} className="w-full h-1 sm:h-1.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-slate-300 shadow-inner rotate-180" />
                     </div>
                   ))}
-                  {/* Performance Pads */}
                   <div className="flex gap-1 mt-auto mb-1 w-full">
                     <button
                       onMouseDown={() => handleFxToggle('B', 'roll')}
@@ -935,13 +1194,12 @@ export default function App() {
 
                   <div className="flex flex-col gap-1 mt-1 mb-1 items-end w-full">
                     <span className="text-[8px] sm:text-[9px] text-cyan-400 font-bold">FLT</span>
-                    <input type="range" min="-100" max="100" step="1" value={filterB} onChange={(e) => handleFilterChange('B', parseFloat(e.target.value))} onDoubleClick={() => handleFilterChange('B', 0)} className="w-full h-2 sm:h-2.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-cyan-500 shadow-inner rotate-180" />
+                    <input type="range" min="-100" max="100" step="1" value={filterB} onChange={(e) => handleFilterChange('B', parseFloat(e.target.value))} onDoubleClick={() => handleFilterChange('B', 0)} onWheel={handleSliderWheel} className="w-full h-2 sm:h-2.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-cyan-500 shadow-inner rotate-180" />
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Crossfader */}
             <div className="w-full mt-4 sm:mt-6 bg-slate-950/80 px-4 py-3 sm:py-4 rounded-lg border border-slate-800/80 shadow-inner">
               <input 
                 type="range" 
@@ -951,18 +1209,18 @@ export default function App() {
                 value={xfade} 
                 onChange={handleCrossfadeChange}
                 onDoubleClick={() => handleCrossfadeChange({ target: { value: '0.5' } } as React.ChangeEvent<HTMLInputElement>)}
+                onWheel={handleSliderWheel}
                 className="w-full h-2 sm:h-2.5 bg-slate-900 rounded-full appearance-none cursor-pointer accent-slate-400 shadow-inner"
               />
             </div>
           </div>
 
-          {/* Deck B */}
           <div className={`flex-1 min-w-0 w-full p-3 sm:p-4 lg:p-5 rounded-xl border flex flex-col gap-2 transition-colors ${deckB.isPlaying ? 'bg-slate-900/80 border-blue-500/30' : 'bg-slate-900/40 border-slate-800/80'}`}>
             
-            {/* 1. Waveform */}
             <div className="h-10 sm:h-12 lg:h-16 w-full shrink-0 rounded overflow-hidden shadow-inner bg-slate-950/50">
               <Waveform 
                 peaks={deckB.peaks}
+                segments={deckB.segments}
                 currentTime={progressB.current || 0}
                 duration={progressB.max || 0}
                 introMarker={deckB.introMarker}
@@ -973,15 +1231,22 @@ export default function App() {
               />
             </div>
 
-            {/* 2. Transport & Metadata */}
             <div className="flex items-center bg-slate-950/50 p-2 sm:p-3 rounded-lg border border-slate-800/50 gap-2 sm:gap-4 mt-auto flex-row-reverse text-right">
-              <button 
-                disabled={!deckB.track}
-                onClick={() => toggleDeck('B')}
-                className="w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white shadow-inner border border-slate-700/50 shrink-0"
-              >
-                {deckB.isPlaying ? <Square size={18} fill="currentColor" className="text-cyan-500" /> : <Play size={20} fill="currentColor" className="mr-1" />}
-              </button>
+              <div className="flex flex-col items-center gap-2 shrink-0">
+                <button 
+                  disabled={!deckB.track}
+                  onClick={() => toggleDeck('B')}
+                  className="w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white shadow-inner border border-slate-700/50 shrink-0"
+                >
+                  {deckB.isPlaying ? <Square size={18} fill="currentColor" className="text-cyan-500" /> : <Play size={20} fill="currentColor" className="mr-1" />}
+                </button>
+                <button 
+                  onClick={() => handleMuteToggle('B')}
+                  className={`w-full py-0.5 px-2 rounded-full text-[8px] sm:text-[9px] font-bold tracking-widest transition-colors flex items-center justify-center border ${muteB ? 'bg-red-600 text-white border-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
+                >
+                  MUTE
+                </button>
+              </div>
 
               <div className="flex-1 min-w-0 flex flex-col justify-center">
                 <div className="flex justify-between items-end mb-0.5 flex-row-reverse">
@@ -1007,16 +1272,35 @@ export default function App() {
               <div className="flex gap-2 sm:gap-3 items-center shrink-0 border-r border-slate-800/50 pr-2 sm:pr-3 flex-row-reverse">
                 <div className="flex flex-col items-center gap-1 w-20 sm:w-24">
                   <span className="text-[8px] sm:text-[9px] text-slate-400 font-bold tracking-widest leading-none">PITCH</span>
-                  <input 
-                    type="range" 
-                    min="0.84" 
-                    max="1.16" 
-                    step="0.001" 
-                    value={pitchB} 
-                    onChange={(e) => handlePitchChange('B', parseFloat(e.target.value))} 
-                    onDoubleClick={() => handlePitchChange('B', 1.0)}
-                    className="w-full h-1 bg-slate-800 rounded-full appearance-none cursor-pointer accent-cyan-500 shadow-inner" 
-                  />
+                  <div className="flex items-center w-full gap-1">
+                    <button onClick={() => handlePitchNudge('B', -0.1)} className="text-[10px] text-slate-500 hover:text-slate-200 font-bold leading-none select-none px-1 py-0.5 rounded hover:bg-slate-800">-</button>
+                    <input 
+                      type="range" 
+                      min="0.84" 
+                      max="1.16" 
+                      step="any" 
+                      value={pitchB} 
+                      onChange={(e) => handlePitchChange('B', parseFloat(e.target.value))} 
+                      onDoubleClick={() => handlePitchChange('B', 1.0)}
+                      onWheel={(e) => {
+                        e.preventDefault();
+                        const now = Date.now();
+                        const timeSinceLast = now - scrollRef.current.time;
+                        if (timeSinceLast < 50) {
+                          scrollRef.current.multiplier = Math.min(20, scrollRef.current.multiplier + 1);
+                        } else if (timeSinceLast > 250) {
+                          scrollRef.current.multiplier = 1;
+                        }
+                        scrollRef.current.time = now;
+                        
+                        let amt = 0.1 * scrollRef.current.multiplier;
+                        if (amt > 2.0) amt = 2.0;
+                        handlePitchNudge('B', e.deltaY > 0 ? -amt : amt);
+                      }}
+                      className="flex-1 w-full h-1 bg-slate-800 rounded-full appearance-none cursor-pointer accent-cyan-500 shadow-inner min-w-0" 
+                    />
+                    <button onClick={() => handlePitchNudge('B', 0.1)} className="text-[10px] text-slate-500 hover:text-slate-200 font-bold leading-none select-none px-1 py-0.5 rounded hover:bg-slate-800">+</button>
+                  </div>
                   <span className="text-[8px] sm:text-[9px] font-mono text-slate-500 leading-none">{((pitchB - 1) * 100).toFixed(1)}%</span>
                   
                   <div className="flex w-full gap-1 mt-0.5">
@@ -1039,9 +1323,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* 4. Parametric FX Bay */}
             <div className="flex gap-2 sm:gap-3 p-2 sm:p-3 bg-slate-900/80 rounded-lg border border-slate-800/80 flex-row-reverse">
-              {/* Echo */}
               <div className="flex flex-col gap-1.5 sm:gap-2 flex-1 min-w-0 border-l border-slate-800/50 pl-2 sm:pl-3">
                 <div className="flex justify-between items-center flex-row-reverse">
                   <span className="text-[9px] sm:text-[10px] font-bold tracking-widest text-blue-400">ECHO</span>
@@ -1052,11 +1334,11 @@ export default function App() {
                 </div>
                 <div className="flex items-center gap-1 sm:gap-2 flex-row-reverse">
                   <span className="text-[7px] sm:text-[8px] text-slate-500 w-5 sm:w-7 text-right">TIME</span>
-                  <input type="range" min="0.05" max="1" step="0.01" value={fxB.delayTime} onChange={(e) => handleFxParamChange('B', 'delay', 'time', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('B', 'delay', 'time', 0.25)} className="flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400 rotate-180" />
+                  <input type="range" min="0.05" max="1" step="0.01" value={fxB.delayTime} onChange={(e) => handleFxParamChange('B', 'delay', 'time', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('B', 'delay', 'time', 0.25)} onWheel={handleSliderWheel} className="flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400 rotate-180" />
                 </div>
                 <div className="flex items-center gap-1 sm:gap-2 flex-row-reverse">
                   <span className="text-[7px] sm:text-[8px] text-slate-500 w-5 sm:w-7 text-right">FDBK</span>
-                  <input type="range" min="0" max="0.95" step="0.01" value={fxB.delayFeedback} onChange={(e) => handleFxParamChange('B', 'delay', 'feedback', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('B', 'delay', 'feedback', 0.5)} className="flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400 rotate-180" />
+                  <input type="range" min="0" max="0.95" step="0.01" value={fxB.delayFeedback} onChange={(e) => handleFxParamChange('B', 'delay', 'feedback', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('B', 'delay', 'feedback', 0.5)} onWheel={handleSliderWheel} className="flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400 rotate-180" />
                 </div>
                 <div className="flex gap-1 justify-start -mt-1 flex-row-reverse flex-wrap">
                   <button onClick={() => handleFxParamChange('B', 'delay', 'time', Math.min(1, 60 / (bpmB || 120)))} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">1/4</button>
@@ -1065,7 +1347,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Reverb */}
               <div className="flex flex-col gap-1.5 sm:gap-2 flex-1 min-w-0 border-l border-slate-800/50 pl-2 sm:pl-3">
                 <div className="flex justify-between items-center flex-row-reverse">
                   <span className="text-[9px] sm:text-[10px] font-bold tracking-widest text-cyan-400">REVERB</span>
@@ -1076,11 +1357,10 @@ export default function App() {
                 </div>
                 <div className="flex items-center gap-1 sm:gap-2 mt-auto mb-0.5 sm:mb-1 flex-row-reverse">
                   <span className="text-[7px] sm:text-[8px] text-slate-500 w-5 sm:w-7 text-right">SIZE</span>
-                  <input type="range" min="0" max="1" step="0.01" value={fxB.reverbSize} onChange={(e) => handleFxParamChange('B', 'reverb', 'size', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('B', 'reverb', 'size', 0.7)} className="flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400 rotate-180" />
+                  <input type="range" min="0" max="1" step="0.01" value={fxB.reverbSize} onChange={(e) => handleFxParamChange('B', 'reverb', 'size', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('B', 'reverb', 'size', 0.7)} onWheel={handleSliderWheel} className="flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400 rotate-180" />
                 </div>
               </div>
 
-              {/* Phaser */}
               <div className="flex flex-col gap-1.5 sm:gap-2 flex-1 min-w-0">
                 <div className="flex justify-between items-center flex-row-reverse">
                   <span className="text-[9px] sm:text-[10px] font-bold tracking-widest text-fuchsia-400">PHASER</span>
@@ -1091,7 +1371,7 @@ export default function App() {
                 </div>
                 <div className="flex items-center gap-1 sm:gap-2 mt-auto mb-0.5 sm:mb-1 flex-row-reverse">
                   <span className="text-[7px] sm:text-[8px] text-slate-500 w-5 sm:w-7 text-right">RATE</span>
-                  <input type="range" min="0.1" max="10" step="0.1" value={fxB.phaserRate} onChange={(e) => handleFxParamChange('B', 'phaser', 'rate', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('B', 'phaser', 'rate', 0.5)} className="flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400 rotate-180" />
+                  <input type="range" min="0.1" max="10" step="0.1" value={fxB.phaserRate} onChange={(e) => handleFxParamChange('B', 'phaser', 'rate', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('B', 'phaser', 'rate', 0.5)} onWheel={handleSliderWheel} className="flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400 rotate-180" />
                 </div>
                 <div className="flex gap-1 justify-start -mt-1 flex-row-reverse flex-wrap">
                   <button onClick={() => handleFxParamChange('B', 'phaser', 'rate', Math.min(10, ((bpmB || 120) / 60) * 0.25))} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">4 BARS</button>
@@ -1104,13 +1384,12 @@ export default function App() {
           </div>
         </div>
 
-        {/* DRAGGABLE DIVIDER / LIBRARY HEADER */}
         <div 
           className="h-6 bg-slate-900 border-y border-slate-800 flex items-center justify-between px-4 cursor-row-resize shrink-0 group hover:bg-slate-800 transition-colors"
           onMouseDown={handleMouseDown}
           onDoubleClick={toggleLibraryMaximize}
         >
-          <div className="w-16"></div> {/* spacer */}
+          <div className="w-16"></div>
           <div className="flex gap-1.5 items-center opacity-30 group-hover:opacity-100 transition-opacity">
             <div className="w-1 h-1 rounded-full bg-slate-400"></div>
             <div className="w-1 h-1 rounded-full bg-slate-400"></div>
@@ -1125,10 +1404,8 @@ export default function App() {
           </button>
         </div>
 
-        {/* BROWSER (BOTTOM HALF) */}
         <div className="flex-1 flex bg-slate-900 min-h-0">
           
-          {/* Browser Navigation Pane */}
           <div className="w-64 border-r border-slate-800 flex flex-col bg-slate-950/50">
             <div className="p-4 border-b border-slate-800">
               <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Browser</div>
@@ -1148,9 +1425,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Tracks Context Menu (Empty to remove sidebar buttons) */}
-
-            {/* M3U Context Menu */}
             {activeTab === 'playlists' && (
               <div className="p-4" onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop}>
                 <div className={`p-4 border-2 border-dashed rounded-lg text-center transition ${dragActive ? 'border-blue-500 bg-blue-500/10' : 'border-slate-800 bg-slate-900/50'}`}>
@@ -1168,9 +1442,7 @@ export default function App() {
             )}
           </div>
 
-          {/* Data Table */}
           <div className="flex-1 overflow-auto bg-slate-900/80 p-2 sm:p-4 flex flex-col">
-            {/* Library Action Bar */}
             {activeTab === 'tracks' && (
               <div className="flex justify-start gap-3 mb-3">
                 <button onClick={handleLoadDirectory} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white shadow-sm shadow-blue-500/20 rounded text-xs font-medium flex justify-center items-center gap-2 transition">
@@ -1181,9 +1453,14 @@ export default function App() {
                     <Scan size={14} /> Scan Missing Metadata
                   </button>
                 )}
-                {!sessionStarted && dbTracks.length > 0 && (
-                  <button onClick={() => setSessionStarted(true)} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-medium flex justify-center items-center gap-2 transition">
-                    Restore Previous Session ({dbTracks.length} tracks)
+                {!sessionStarted && dbTracksCount > 0 && (
+                  <button onClick={handleRestoreSession} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs font-medium flex justify-center items-center gap-2 transition">
+                    Restore Previous Session ({dbTracksCount} tracks)
+                  </button>
+                )}
+                {dbTracksCount > 0 && (
+                  <button onClick={handleClearCache} className="px-3 py-1.5 ml-auto bg-red-900/40 hover:bg-red-800/60 text-red-300 hover:text-red-200 rounded text-xs font-medium flex justify-center items-center gap-2 transition">
+                    <Trash2 size={14} /> Clear Cache
                   </button>
                 )}
               </div>
@@ -1200,7 +1477,7 @@ export default function App() {
               {displayTracks.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-48 text-slate-500 text-sm gap-2">
                   <p>{activeTab === 'playlists' ? 'The active queue is empty. Load a directory or playlist.' : 'The track view is empty.'}</p>
-                  {activeTab === 'tracks' && !sessionStarted && dbTracks.length === 0 && <p className="text-xs text-slate-600">Use "Load Library" to add your local audio folders.</p>}
+                  {activeTab === 'tracks' && !sessionStarted && dbTracksCount === 0 && <p className="text-xs text-slate-600">Use "Load Library" to add your local audio folders.</p>}
                 </div>
               ) : (
                 displayTracks.map((track) => (

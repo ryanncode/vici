@@ -1,26 +1,26 @@
+// Polyfill window for music-metadata which checks for browser environments
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(globalThis as any).window = globalThis;
+
 import * as mm from 'music-metadata';
 import type { TrackMetadata } from '../types/mixer';
-import type { FileSystemFileHandle } from '../services/FileManager';
 
-// Create a fast hash string based on path and size
-async function generateId(filePath: string, size: number): Promise<string> {
-  const msgUint8 = new TextEncoder().encode(`${filePath}_${size}`);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+// Create a safe hash string based on path and size without relying on crypto.subtle
+function generateId(filePath: string, size: number): string {
+  try {
+    return btoa(encodeURIComponent(`${filePath}_${size}`)).replace(/[/+=]/g, '');
+  } catch {
+    return `id_${Date.now()}_${size}`;
+  }
 }
 
-self.onmessage = async (e: MessageEvent<{ fileHandle?: FileSystemFileHandle, rawFile?: File, filePath?: string }>) => {
+self.onmessage = async (e: MessageEvent<{ jobId: string, file: File, filePath?: string, existingId?: string }>) => {
+  const { jobId, file, filePath, existingId } = e.data;
   try {
-    const { fileHandle, rawFile, filePath } = e.data;
-    
-    // Get the actual File object
-    const file = rawFile || (fileHandle ? await fileHandle.getFile() : null);
-    
-    if (!file) throw new Error("No file or file handle provided");
+    if (!file) throw new Error("No file provided to worker");
 
     // Generate our ID hash
-    const id = await generateId(filePath || file.name, file.size);
+    const id = existingId || generateId(filePath || file.name, file.size);
     
     // Check if we need to parse metadata
     const metadata = await mm.parseBlob(file, { duration: true, skipCovers: false });
@@ -67,14 +67,12 @@ self.onmessage = async (e: MessageEvent<{ fileHandle?: FileSystemFileHandle, raw
       duration: metadata.format.duration || 0,
       replayGain,
       isScanned: true,
-      albumArt,
-      fileHandle,
-      rawFile
+      albumArt
     };
     
-    self.postMessage({ success: true, metadata: trackMetadata });
+    self.postMessage({ jobId, success: true, metadata: trackMetadata });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    self.postMessage({ success: false, error: errorMessage });
+    self.postMessage({ jobId, success: false, error: errorMessage });
   }
 };

@@ -1,5 +1,12 @@
 import type { FileSystemFileHandle } from '../services/FileManager';
 
+export interface TrackSegment {
+  start: number; // in seconds
+  end: number;
+  type: 'intro' | 'verse' | 'chorus' | 'outro' | 'bridge';
+  color: string;
+}
+
 export interface TrackMetadata {
   id: string; // Hash of filepath + file size (Primary Key)
   filePath: string;
@@ -19,6 +26,7 @@ export interface TrackMetadata {
   // Non-indexed properties
   albumArt?: Blob;
   waveformPeaks?: Float32Array;
+  segments?: TrackSegment[];
   introMarker?: number;
   outroMarker?: number;
   fileHandle?: FileSystemFileHandle;
@@ -40,6 +48,7 @@ export interface Track {
   replayGain?: number;
   url: string; // Dynamic Object URL or local asset path
   waveformPeaks?: Float32Array;
+  segments?: TrackSegment[];
   introMarker?: number;
   outroMarker?: number;
   fileHandle?: FileSystemFileHandle; // FileSystemFileHandle

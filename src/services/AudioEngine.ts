@@ -1,4 +1,5 @@
 import * as Tone from 'tone';
+import type { TrackSegment } from '../types/mixer';
 
 export class Deck {
   public player: Tone.Player;
@@ -18,6 +19,7 @@ export class Deck {
   public currentBpm: number = 120;
 
   public peaks: Float32Array | null = null;
+  public segments: TrackSegment[] = [];
   public channelVolume: number = 1.0;
   public trackGainDb: number = 0;
 
@@ -107,6 +109,182 @@ export class Deck {
         this.peaks[i] = this.peaks[i] / max;
       }
     }
+
+    this.analyzeSegments();
+  }
+
+  private analyzeSegments() {
+    if (!this.peaks || !this.player.buffer) return;
+    
+    const duration = this.player.buffer.duration;
+    const numPeaks = this.peaks.length;
+    const secondsPerPeak = duration / numPeaks;
+    
+    // 1. Smoothen the peaks (moving average) to get broader energy levels
+    const smoothWindow = Math.ceil(4.0 / secondsPerPeak); // ~4 seconds window
+    const smoothPeaks = new Float32Array(numPeaks);
+    for (let i = 0; i < numPeaks; i++) {
+      let sum = 0;
+      let count = 0;
+      for (let j = Math.max(0, i - smoothWindow); j < Math.min(numPeaks, i + smoothWindow); j++) {
+        sum += this.peaks[j];
+        count++;
+      }
+      smoothPeaks[i] = sum / count;
+    }
+
+    // 2. Identify segments by applying thresholds
+    // Define relative thresholds based on overall energy profile
+    const segments: TrackSegment[] = [];
+    let currentType: TrackSegment['type'] | null = null;
+    let currentStart = 0;
+
+    for (let i = 0; i < numPeaks; i++) {
+      const val = smoothPeaks[i];
+      let type: TrackSegment['type'];
+      
+      if (val < 0.25) {
+        // Very low energy
+        type = 'intro'; // initially label all low-energy as intro, will fix outro later
+      } else if (val > 0.65) {
+        // High energy -> chorus
+        type = 'chorus';
+      } else if (val > 0.45) {
+        // Med-high energy -> bridge/build
+        type = 'bridge';
+      } else {
+        // Medium-low energy -> verse
+        type = 'verse';
+      }
+
+      if (type !== currentType) {
+        if (currentType !== null) {
+          segments.push({
+            start: currentStart * secondsPerPeak,
+            end: i * secondsPerPeak,
+            type: currentType,
+            color: this.getColorForSegmentType(currentType)
+          });
+        }
+        currentType = type;
+        currentStart = i;
+      }
+    }
+    
+    // Push final segment
+    if (currentType !== null) {
+      segments.push({
+        start: currentStart * secondsPerPeak,
+        end: duration,
+        type: currentType,
+        color: this.getColorForSegmentType(currentType)
+      });
+    }
+
+    // 3. Clean up: Merge small adjacent segments (< 8 seconds) and snap to assumed beats
+    this.segments = this.cleanupSegments(segments, duration);
+  }
+
+  private getColorForSegmentType(type: TrackSegment['type']): string {
+    switch (type) {
+      case 'intro': return '#3b82f6'; // Blue
+      case 'verse': return '#22c55e'; // Green
+      case 'chorus': return '#ef4444'; // Red
+      case 'bridge': return '#eab308'; // Yellow
+      case 'outro': return '#a855f7'; // Purple
+      default: return '#64748b'; // Slate
+    }
+  }
+
+  private cleanupSegments(segments: TrackSegment[], duration: number): TrackSegment[] {
+    if (segments.length === 0) return [];
+    
+    const minDuration = 8.0; // Seconds
+    const cleaned: TrackSegment[] = [segments[0]];
+    
+    // 1. Merge tiny segments
+    for (let i = 1; i < segments.length; i++) {
+      const prev = cleaned[cleaned.length - 1];
+      const curr = segments[i];
+      
+      if (curr.end - curr.start < minDuration) {
+        prev.end = curr.end;
+      } else {
+        cleaned.push({ ...curr });
+      }
+    }
+    
+    // 2. Subdivide long segments by phrases
+    const bpm = this.originalBpm > 0 ? this.originalBpm : 120;
+    const phraseLength = (60 / bpm) * 32; // e.g. ~15-16s for 120-128bpm
+    const subdivided: TrackSegment[] = [];
+    
+    for (const seg of cleaned) {
+      const segDur = seg.end - seg.start;
+      if (segDur > phraseLength * 1.5) {
+        // Split it into roughly phrase-sized chunks
+        const numPieces = Math.ceil(segDur / phraseLength);
+        const actualPieceLen = segDur / numPieces;
+        for (let k = 0; k < numPieces; k++) {
+          subdivided.push({
+            start: seg.start + k * actualPieceLen,
+            end: seg.start + (k + 1) * actualPieceLen,
+            type: seg.type,
+            color: seg.color
+          });
+        }
+      } else {
+        subdivided.push(seg);
+      }
+    }
+    
+    // 3. Identify the true Outro
+    // Increase the window to up to 180 seconds for very long tracks (e.g. 7-12 min techno)
+    const mixOutWindowStart = Math.max(duration / 2, duration - Math.min(180, duration * 0.35));
+    let foundOutroDrop = false;
+    
+    // Search FORWARD so we find the EARLIEST valid drop in the mix-out window
+    for (let i = 0; i < subdivided.length; i++) {
+      const seg = subdivided[i];
+      if (seg.start >= mixOutWindowStart && seg.type !== 'chorus') {
+        // Ensure there are no more 'chorus' (high energy climax) segments after this point
+        let hasChorusAfter = false;
+        for (let j = i + 1; j < subdivided.length; j++) {
+          if (subdivided[j].type === 'chorus') {
+            hasChorusAfter = true;
+            break;
+          }
+        }
+        
+        if (!hasChorusAfter) {
+          seg.type = 'outro';
+          seg.color = this.getColorForSegmentType('outro');
+          // Convert all subsequent segments to outro as well
+          for (let j = i + 1; j < subdivided.length; j++) {
+             subdivided[j].type = 'outro';
+             subdivided[j].color = this.getColorForSegmentType('outro');
+          }
+          foundOutroDrop = true;
+          break; 
+        }
+      }
+    }
+    
+    // 4. Force outro if no natural drop was found
+    if (!foundOutroDrop && subdivided.length > 0) {
+      // Force last ~3-4 phrases (up to 60s) to be outro for long tracks if no drop
+      const forcedPhrases = duration > 300 ? 4 : 2; 
+      const forceOutroStart = Math.max(duration / 2, duration - phraseLength * forcedPhrases);
+      for (let i = subdivided.length - 1; i >= 0; i--) {
+        const seg = subdivided[i];
+        if (seg.start >= forceOutroStart) {
+          seg.type = 'outro';
+          seg.color = this.getColorForSegmentType('outro');
+        }
+      }
+    }
+
+    return subdivided;
   }
 
   public play(): void {

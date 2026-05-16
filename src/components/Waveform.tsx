@@ -1,7 +1,9 @@
 import React, { useRef, useEffect, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import type { TrackSegment } from '../types/mixer';
 
 interface WaveformProps {
   peaks: Float32Array | null;
+  segments?: TrackSegment[];
   currentTime: number;
   duration: number;
   introMarker: number;
@@ -13,6 +15,7 @@ interface WaveformProps {
 
 export const Waveform: React.FC<WaveformProps> = ({
   peaks,
+  segments,
   currentTime,
   duration,
   introMarker,
@@ -46,6 +49,18 @@ export const Waveform: React.FC<WaveformProps> = ({
 
     ctx.clearRect(0, 0, width, height);
 
+    // Draw segments (colored blocks)
+    if (segments && segments.length > 0 && duration > 0) {
+      for (const segment of segments) {
+        const startX = (segment.start / duration) * width;
+        const endX = (segment.end / duration) * width;
+        const segmentWidth = endX - startX;
+        
+        ctx.fillStyle = `${segment.color}33`; // 20% opacity block
+        ctx.fillRect(startX, 0, segmentWidth, height);
+      }
+    }
+
     // Draw peaks
     const step = width / peaks.length;
     
@@ -64,7 +79,7 @@ export const Waveform: React.FC<WaveformProps> = ({
       const y = (height - h) / 2;
       ctx.fillRect(x, y, Math.max(1, step - 0.5), h);
     }
-  }, [peaks, color]);
+  }, [peaks, segments, color, duration]);
 
   // Handle interactions
   const getMouseTime = (e: ReactMouseEvent | globalThis.MouseEvent) => {

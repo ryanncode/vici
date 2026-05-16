@@ -10,11 +10,12 @@ interface AutoMixerProps {
   library: Track[];
   isAutomixEnabled: boolean;
   onTransitionStart: (winningDeck: 'A' | 'B', nextTrack: Track) => void;
-  onTransitionComplete: (winningDeck: 'A' | 'B', nextTrack: Track, isFromLibrary: boolean) => void;
+  onTransitionComplete: (winningDeck: 'A' | 'B', nextTrack: Track) => void;
   onTransitionCancel: (cancelledDeck: 'A' | 'B') => void;
+  onPitchChange: (deckId: 'A' | 'B', pitch: number) => void;
 }
 
-export function useAutoMixer({ deckAState, deckBState, library, isAutomixEnabled, onTransitionStart, onTransitionComplete, onTransitionCancel }: AutoMixerProps) {
+export function useAutoMixer({ deckAState, deckBState, library, isAutomixEnabled, onTransitionStart, onTransitionComplete, onTransitionCancel, onPitchChange }: AutoMixerProps) {
   const animationRef = useRef<number | null>(null);
   const isTransitioning = useRef<boolean>(false);
   const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -90,7 +91,18 @@ export function useAutoMixer({ deckAState, deckBState, library, isAutomixEnabled
 
       // If the target deck is empty, pull from library
       if (!nextTrack) {
-        nextTrack = library[0]; 
+        const currentDeckState = currentActive === 'A' ? deckAState : deckBState;
+        const currentTrackId = currentDeckState.track?.id;
+        let nextIndex = 0;
+        
+        if (currentTrackId) {
+          const currentIndex = library.findIndex(t => t.id === currentTrackId);
+          if (currentIndex !== -1 && currentIndex + 1 < library.length) {
+            nextIndex = currentIndex + 1;
+          }
+        }
+        
+        nextTrack = library[nextIndex]; 
         isFromLibrary = true;
       }
 
@@ -102,7 +114,12 @@ export function useAutoMixer({ deckAState, deckBState, library, isAutomixEnabled
       try {
         let trackUrl = nextTrack.url;
         if (nextTrack.fileHandle && !trackUrl) {
+          if (await nextTrack.fileHandle.queryPermission({ mode: 'read' }) === 'prompt') {
+            await nextTrack.fileHandle.requestPermission({ mode: 'read' });
+          }
           trackUrl = await createTrackUrl(nextTrack.fileHandle);
+        } else if (!trackUrl && nextTrack.rawFile) {
+          trackUrl = URL.createObjectURL(nextTrack.rawFile);
         }
 
         // 1. Load and Sync Tempo
@@ -112,7 +129,8 @@ export function useAutoMixer({ deckAState, deckBState, library, isAutomixEnabled
 
         targetDeck.originalBpm = nextTrack.bpm;
         if (targetDeck.originalBpm > 0 && currentDeck.currentBpm > 0) {
-          targetDeck.setPlaybackRate(currentDeck.currentBpm / targetDeck.originalBpm);
+          const newPitch = currentDeck.currentBpm / targetDeck.originalBpm;
+          onPitchChange(nextDeckId, newPitch);
         }
 
         const introMarker = nextDeckState.introMarker ?? 0;
@@ -133,8 +151,7 @@ export function useAutoMixer({ deckAState, deckBState, library, isAutomixEnabled
           currentDeck.stop();
           isTransitioning.current = false;
           transitionTimeoutRef.current = null;
-          // Only slice from library if we actually used a library track
-          onTransitionComplete(nextDeckId, nextTrack!, isFromLibrary);
+          onTransitionComplete(nextDeckId, nextTrack!);
         }, fadeDuration * 1000);
       } catch (err) {
         console.error("AutoMixer Transition Failed:", err);
