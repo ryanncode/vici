@@ -1,11 +1,11 @@
 import React, { useRef, useEffect, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import type { TrackSegment } from '../types/mixer';
+import { AudioEngine } from '../services/AudioEngine';
 
 interface WaveformProps {
+  deckId: 'A' | 'B';
   peaks: Float32Array | null;
   segments?: TrackSegment[];
-  currentTime: number;
-  duration: number;
   introMarker: number;
   outroMarker: number;
   color: string;
@@ -13,11 +13,10 @@ interface WaveformProps {
   onMarkerChange: (type: 'intro' | 'outro', time: number) => void;
 }
 
-export const Waveform: React.FC<WaveformProps> = ({
+export const Waveform: React.FC<WaveformProps> = React.memo(({
+  deckId,
   peaks,
   segments,
-  currentTime,
-  duration,
   introMarker,
   outroMarker,
   color,
@@ -26,14 +25,24 @@ export const Waveform: React.FC<WaveformProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const playheadRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
   const [draggingMarker, setDraggingMarker] = useState<'intro' | 'outro' | 'playhead' | null>(null);
   const [dragTime, setDragTime] = useState<number | null>(null);
+
+  // Provide duration to other functions without triggering re-render
+  const getDuration = () => {
+    const engine = AudioEngine.getInstance();
+    const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
+    return deckEngine.player.buffer?.duration || 0;
+  };
 
   // Draw waveform
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !peaks || peaks.length === 0) return;
 
+    const duration = getDuration();
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
@@ -79,10 +88,58 @@ export const Waveform: React.FC<WaveformProps> = ({
       const y = (height - h) / 2;
       ctx.fillRect(x, y, Math.max(1, step - 0.5), h);
     }
-  }, [peaks, segments, color, duration]);
+  }, [peaks, segments, color, deckId]);
+
+  const onSeekRef = useRef(onSeek);
+  const onMarkerChangeRef = useRef(onMarkerChange);
+
+  useEffect(() => {
+    onSeekRef.current = onSeek;
+    onMarkerChangeRef.current = onMarkerChange;
+  }, [onSeek, onMarkerChange]);
+
+  // 50ms Interval loop to update playhead position without starving audio thread
+  useEffect(() => {
+    let lastPctStr = '';
+
+    const updatePlayhead = () => {
+      const duration = getDuration();
+      let pct = 0;
+      let shouldUpdate = false;
+      
+      if (duration > 0 && draggingMarker !== 'playhead') {
+        const engine = AudioEngine.getInstance();
+        const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
+        const current = deckEngine.getCurrentTime();
+        pct = (current / duration) * 100;
+        shouldUpdate = true;
+      } else if (draggingMarker === 'playhead' && dragTime !== null && duration > 0) {
+        // Optimistic UI while dragging
+        pct = (dragTime / duration) * 100;
+        shouldUpdate = true;
+      }
+      
+      if (shouldUpdate) {
+        const pctStr = pct.toFixed(2);
+        if (pctStr !== lastPctStr) {
+          if (playheadRef.current) {
+            playheadRef.current.style.left = `${pctStr}%`;
+          }
+          if (overlayRef.current) {
+            overlayRef.current.style.width = `${pctStr}%`;
+          }
+          lastPctStr = pctStr;
+        }
+      }
+    };
+
+    const intervalId = setInterval(updatePlayhead, 50);
+    return () => clearInterval(intervalId);
+  }, [deckId, draggingMarker, dragTime]);
 
   // Handle interactions
   const getMouseTime = (e: ReactMouseEvent | globalThis.MouseEvent) => {
+    const duration = getDuration();
     if (!containerRef.current || duration <= 0) return 0;
     const rect = containerRef.current.getBoundingClientRect();
     const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
@@ -90,6 +147,7 @@ export const Waveform: React.FC<WaveformProps> = ({
   };
 
   const handleMouseDown = (e: ReactMouseEvent) => {
+    const duration = getDuration();
     if (duration <= 0) return;
     
     // Check if clicking near a marker
@@ -113,42 +171,39 @@ export const Waveform: React.FC<WaveformProps> = ({
     setDragTime(clickTime);
   };
 
-  const handleMouseMove = (e: MouseEvent) => {
-    if (draggingMarker) {
-      const time = getMouseTime(e);
-      if (draggingMarker === 'playhead') {
-        setDragTime(time);
-      } else {
-        onMarkerChange(draggingMarker, time);
-      }
-    }
-  };
-
-  const handleMouseUp = (e: MouseEvent) => {
-    if (draggingMarker === 'playhead') {
-      const time = getMouseTime(e);
-      onSeek(time);
-    }
-    setDraggingMarker(null);
-    setDragTime(null);
-  };
-
   useEffect(() => {
-    if (draggingMarker) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-    } else {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    }
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
+    const onMouseMove = (e: MouseEvent) => {
+      if (draggingMarker) {
+        const time = getMouseTime(e);
+        if (draggingMarker === 'playhead') {
+          setDragTime(time);
+        } else {
+          onMarkerChangeRef.current(draggingMarker, time);
+        }
+      }
     };
-  }, [draggingMarker, duration]);
 
-  const displayTime = draggingMarker === 'playhead' && dragTime !== null ? dragTime : currentTime;
-  const progressPct = duration > 0 ? (displayTime / duration) * 100 : 0;
+    const onMouseUp = (e: MouseEvent) => {
+      if (draggingMarker === 'playhead') {
+        const time = getMouseTime(e);
+        onSeekRef.current(time);
+      }
+      setDraggingMarker(null);
+      setDragTime(null);
+    };
+
+    if (draggingMarker) {
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
+    }
+    
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [draggingMarker]);
+
+  const duration = getDuration();
   const introPct = duration > 0 ? (introMarker / duration) * 100 : 0;
   const outroPct = duration > 0 ? (outroMarker / duration) * 100 : 100;
 
@@ -166,14 +221,16 @@ export const Waveform: React.FC<WaveformProps> = ({
 
       {/* Progress Overlay */}
       <div 
+        ref={overlayRef}
         className="absolute top-0 bottom-0 left-0 bg-slate-950/40 pointer-events-none mix-blend-overlay"
-        style={{ width: `${progressPct}%` }}
+        style={{ width: '0%' }}
       />
       
       {/* Playhead */}
       <div 
+        ref={playheadRef}
         className="absolute top-0 bottom-0 w-0.5 bg-white shadow-[0_0_5px_rgba(255,255,255,0.8)] pointer-events-none z-20"
-        style={{ left: `${progressPct}%` }}
+        style={{ left: '0%' }}
       />
 
       {/* Intro Marker */}
@@ -199,4 +256,4 @@ export const Waveform: React.FC<WaveformProps> = ({
       </div>
     </div>
   );
-};
+});

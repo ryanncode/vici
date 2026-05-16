@@ -4,21 +4,45 @@ import { useMixerStore } from '../store/mixerStore';
 import { AudioEngine } from '../services/AudioEngine';
 import * as Tone from 'tone';
 
-export function MixerConsole() {
-  const store = useMixerStore();
-  const deckA = store.deckA;
-  const deckB = store.deckB;
+export const MixerConsole = React.memo(function MixerConsole() {
+  const deckA = useMixerStore(state => state.deckA);
+  const deckB = useMixerStore(state => state.deckB);
+  const crossfade = useMixerStore(state => state.crossfade);
+  const isAutomixEnabled = useMixerStore(state => state.isAutomixEnabled);
   
+  const setIsAutomixEnabled = useMixerStore(state => state.setIsAutomixEnabled);
+  const setDeckFx = useMixerStore(state => state.setDeckFx);
+  
+  const scrollRef = React.useRef({ time: 0, multiplier: 1 });
+  const crossfadeSliderRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    if (!isAutomixEnabled) return;
+    let lastVal = '';
+    const loop = () => {
+      if (crossfadeSliderRef.current) {
+        const engine = AudioEngine.getInstance();
+        const valStr = engine.crossfader.fade.value.toFixed(3);
+        if (valStr !== lastVal) {
+          crossfadeSliderRef.current.value = valStr;
+          lastVal = valStr;
+        }
+      }
+    };
+    const interval = setInterval(loop, 50);
+    return () => clearInterval(interval);
+  }, [isAutomixEnabled]);
+
   const handleVolumeChange = (deckId: 'A' | 'B', value: number) => {
     const engine = AudioEngine.getInstance();
     const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
     deckEngine.setChannelVolume(value);
-    store.setDeckState(deckId, { volume: value });
+    useMixerStore.getState().setDeckState(deckId, { volume: value });
   };
 
   const handleCrossfadeChange = (e: ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value);
-    store.setCrossfade(val);
+    useMixerStore.getState().setCrossfade(val);
     const engine = AudioEngine.getInstance();
     engine.crossfader.fade.cancelScheduledValues(Tone.now());
     engine.setCrossfadeValue(val);
@@ -28,14 +52,14 @@ export function MixerConsole() {
     const engine = AudioEngine.getInstance();
     const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
     deckEngine.setEq(band, value);
-    store.setDeckEq(deckId, { [band]: value });
+    useMixerStore.getState().setDeckEq(deckId, { [band]: value });
   };
 
   const handleFilterChange = (deckId: 'A' | 'B', value: number) => {
     const engine = AudioEngine.getInstance();
     const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
     deckEngine.setFilterColor(value);
-    store.setDeckState(deckId, { filter: value });
+    useMixerStore.getState().setDeckState(deckId, { filter: value });
   };
 
   const handleFxToggle = (deckId: 'A' | 'B', fxType: 'gate' | 'roll' | 'siren') => {
@@ -45,15 +69,15 @@ export function MixerConsole() {
     
     if (fxType === 'gate') {
       const newState = !currentFx.gateOn;
-      store.setDeckFx(deckId, { gateOn: newState });
+      setDeckFx(deckId, { gateOn: newState });
       deckEngine.setGateState(newState);
     } else if (fxType === 'roll') {
       const newState = !currentFx.rollOn;
-      store.setDeckFx(deckId, { rollOn: newState });
+      setDeckFx(deckId, { rollOn: newState });
       deckEngine.setRoll(newState, 8);
     } else if (fxType === 'siren') {
       const newState = !currentFx.sirenOn;
-      store.setDeckFx(deckId, { sirenOn: newState });
+      setDeckFx(deckId, { sirenOn: newState });
       deckEngine.triggerSiren(newState);
     }
   };
@@ -68,7 +92,16 @@ export function MixerConsole() {
     
     if (isNaN(baseStep)) return;
 
-    let effectiveStep = baseStep;
+    const now = Date.now();
+    const timeSinceLast = now - scrollRef.current.time;
+    if (timeSinceLast < 50) {
+      scrollRef.current.multiplier = Math.min(20, scrollRef.current.multiplier + 1);
+    } else if (timeSinceLast > 250) {
+      scrollRef.current.multiplier = 1;
+    }
+    scrollRef.current.time = now;
+    
+    let effectiveStep = baseStep * scrollRef.current.multiplier;
     const maxAllowedStep = (max - min) * 0.1;
     if (effectiveStep > maxAllowedStep) effectiveStep = maxAllowedStep;
     
@@ -92,10 +125,10 @@ export function MixerConsole() {
         <div className="flex flex-col items-center gap-1.5 -mt-1">
           <h1 className="text-xl font-bold tracking-tight text-white leading-none">Vici</h1>
           <button 
-            onClick={() => store.setIsAutomixEnabled(!store.isAutomixEnabled)}
-            className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold tracking-wide transition ${store.isAutomixEnabled ? 'bg-blue-600/20 text-blue-400 border border-blue-500/50' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'}`}
+            onClick={() => setIsAutomixEnabled(!isAutomixEnabled)}
+            className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold tracking-wide transition ${isAutomixEnabled ? 'bg-blue-600/20 text-blue-400 border border-blue-500/50' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'}`}
           >
-            {store.isAutomixEnabled ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
+            {isAutomixEnabled ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
             AUTOMIX
           </button>
         </div>
@@ -108,7 +141,7 @@ export function MixerConsole() {
         <div className="flex flex-1 gap-1 sm:gap-2">
           <div className="flex flex-col items-center h-full justify-center pb-4">
             <div className="h-32 sm:h-40 w-4 flex items-center justify-center relative">
-              <input type="range" min="0" max="1.5" step="0.01" value={deckA.volume} onChange={(e) => handleVolumeChange('A', parseFloat(e.target.value))} onDoubleClick={() => handleVolumeChange('A', 1.0)} onWheel={handleSliderWheel} className="w-32 sm:w-40 h-1.5 absolute -rotate-90 appearance-none cursor-pointer accent-blue-500 bg-slate-800 rounded-full" />
+              <input type="range" min="0" max="1.5" step="0.01" defaultValue={deckA.volume} onChange={(e) => handleVolumeChange('A', parseFloat(e.target.value))} onDoubleClick={(e) => { e.currentTarget.value = '1.0'; handleVolumeChange('A', 1.0); }} onWheel={handleSliderWheel} className="w-32 sm:w-40 h-1.5 absolute -rotate-90 appearance-none cursor-pointer accent-blue-500 bg-slate-800 rounded-full" />
             </div>
             <span className="text-[8px] sm:text-[9px] mt-2 font-bold text-slate-500">VOL</span>
           </div>
@@ -121,7 +154,7 @@ export function MixerConsole() {
             ].map(({ band, label, value }) => (
               <div key={`eqa-${band}`} className="flex flex-col gap-1">
                 <span className="text-[8px] sm:text-[9px] text-slate-400 font-bold">{label}</span>
-                <input type="range" min="-24" max="6" step="0.1" value={value} onChange={(e) => handleEqChange('A', band as 'high'|'mid'|'low', parseFloat(e.target.value))} onDoubleClick={() => handleEqChange('A', band as 'high'|'mid'|'low', 0)} onWheel={handleSliderWheel} className="w-full h-1 sm:h-1.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-slate-300 shadow-inner" />
+                <input type="range" min="-24" max="6" step="0.1" defaultValue={value} onChange={(e) => handleEqChange('A', band as 'high'|'mid'|'low', parseFloat(e.target.value))} onDoubleClick={(e) => { e.currentTarget.value = '0'; handleEqChange('A', band as 'high'|'mid'|'low', 0); }} onWheel={handleSliderWheel} className="w-full h-1 sm:h-1.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-slate-300 shadow-inner" />
               </div>
             ))}
             
@@ -146,7 +179,7 @@ export function MixerConsole() {
 
             <div className="flex flex-col gap-1 mt-1 mb-1">
               <span className="text-[8px] sm:text-[9px] text-blue-400 font-bold">FLT</span>
-              <input type="range" min="-100" max="100" step="1" value={deckA.filter} onChange={(e) => handleFilterChange('A', parseFloat(e.target.value))} onDoubleClick={() => handleFilterChange('A', 0)} onWheel={handleSliderWheel} className="w-full h-2 sm:h-2.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-blue-500 shadow-inner" />
+              <input type="range" min="-100" max="100" step="1" defaultValue={deckA.filter} onChange={(e) => handleFilterChange('A', parseFloat(e.target.value))} onDoubleClick={(e) => { e.currentTarget.value = '0'; handleFilterChange('A', 0); }} onWheel={handleSliderWheel} className="w-full h-2 sm:h-2.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-blue-500 shadow-inner" />
             </div>
           </div>
         </div>
@@ -155,7 +188,7 @@ export function MixerConsole() {
         <div className="flex flex-1 gap-1 sm:gap-2 flex-row-reverse">
           <div className="flex flex-col items-center h-full justify-center pb-4">
             <div className="h-32 sm:h-40 w-4 flex items-center justify-center relative">
-              <input type="range" min="0" max="1.5" step="0.01" value={deckB.volume} onChange={(e) => handleVolumeChange('B', parseFloat(e.target.value))} onDoubleClick={() => handleVolumeChange('B', 1.0)} onWheel={handleSliderWheel} className="w-32 sm:w-40 h-1.5 absolute -rotate-90 appearance-none cursor-pointer accent-cyan-500 bg-slate-800 rounded-full" />
+              <input type="range" min="0" max="1.5" step="0.01" defaultValue={deckB.volume} onChange={(e) => handleVolumeChange('B', parseFloat(e.target.value))} onDoubleClick={(e) => { e.currentTarget.value = '1.0'; handleVolumeChange('B', 1.0); }} onWheel={handleSliderWheel} className="w-32 sm:w-40 h-1.5 absolute -rotate-90 appearance-none cursor-pointer accent-cyan-500 bg-slate-800 rounded-full" />
             </div>
             <span className="text-[8px] sm:text-[9px] mt-2 font-bold text-slate-500">VOL</span>
           </div>
@@ -168,11 +201,11 @@ export function MixerConsole() {
             ].map(({ band, label, value }) => (
               <div key={`eqb-${band}`} className="flex flex-col gap-1 items-end w-full">
                 <span className="text-[8px] sm:text-[9px] text-slate-400 font-bold">{label}</span>
-                <input type="range" min="-24" max="6" step="0.1" value={value} onChange={(e) => handleEqChange('B', band as 'high'|'mid'|'low', parseFloat(e.target.value))} onDoubleClick={() => handleEqChange('B', band as 'high'|'mid'|'low', 0)} onWheel={handleSliderWheel} className="w-full h-1 sm:h-1.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-slate-300 shadow-inner rotate-180" />
+                <input type="range" min="-24" max="6" step="0.1" defaultValue={value} onChange={(e) => handleEqChange('B', band as 'high'|'mid'|'low', parseFloat(e.target.value))} onDoubleClick={(e) => { e.currentTarget.value = '0'; handleEqChange('B', band as 'high'|'mid'|'low', 0); }} onWheel={handleSliderWheel} className="w-full h-1 sm:h-1.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-slate-300 shadow-inner rotate-180" />
               </div>
             ))}
             
-            <div className="flex gap-1 mt-auto mb-1 w-full">
+            <div className="flex gap-1 mt-auto mb-1 w-full flex-row-reverse">
               <button
                 onMouseDown={() => handleFxToggle('B', 'roll')}
                 onMouseUp={() => handleFxToggle('B', 'roll')}
@@ -193,7 +226,7 @@ export function MixerConsole() {
 
             <div className="flex flex-col gap-1 mt-1 mb-1 items-end w-full">
               <span className="text-[8px] sm:text-[9px] text-cyan-400 font-bold">FLT</span>
-              <input type="range" min="-100" max="100" step="1" value={deckB.filter} onChange={(e) => handleFilterChange('B', parseFloat(e.target.value))} onDoubleClick={() => handleFilterChange('B', 0)} onWheel={handleSliderWheel} className="w-full h-2 sm:h-2.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-cyan-500 shadow-inner rotate-180" />
+              <input type="range" min="-100" max="100" step="1" defaultValue={deckB.filter} onChange={(e) => handleFilterChange('B', parseFloat(e.target.value))} onDoubleClick={(e) => { e.currentTarget.value = '0'; handleFilterChange('B', 0); }} onWheel={handleSliderWheel} className="w-full h-2 sm:h-2.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-cyan-500 shadow-inner rotate-180" />
             </div>
           </div>
         </div>
@@ -202,9 +235,10 @@ export function MixerConsole() {
 
       <div className="w-full mt-4 sm:mt-6 bg-slate-950/80 px-4 py-3 sm:py-4 rounded-lg border border-slate-800/80 shadow-inner">
         <input 
+          ref={crossfadeSliderRef}
           type="range" 
           min="0" max="1" step="0.01" 
-          value={store.crossfade} 
+          defaultValue={crossfade} 
           onChange={handleCrossfadeChange}
           onDoubleClick={() => handleCrossfadeChange({ target: { value: '0.5' } } as ChangeEvent<HTMLInputElement>)}
           onWheel={handleSliderWheel}
@@ -213,4 +247,4 @@ export function MixerConsole() {
       </div>
     </div>
   );
-}
+});

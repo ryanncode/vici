@@ -3,11 +3,9 @@ import * as Tone from 'tone';
 import { AudioEngine } from '../services/AudioEngine';
 import { createTrackUrl } from '../services/FileManager';
 import type { Track } from '../types/mixer';
-import type { DeckState } from '../store/mixerStore';
+import { useMixerStore } from '../store/mixerStore';
 
 interface AutoMixerProps {
-  deckAState: DeckState;
-  deckBState: DeckState;
   library: Track[];
   isAutomixEnabled: boolean;
   onTransitionStart: (winningDeck: 'A' | 'B', nextTrack: Track) => void;
@@ -16,7 +14,7 @@ interface AutoMixerProps {
   onPitchChange: (deckId: 'A' | 'B', pitch: number) => void;
 }
 
-export function useAutoMixer({ deckAState, deckBState, library, isAutomixEnabled, onTransitionStart, onTransitionComplete, onTransitionCancel, onPitchChange }: AutoMixerProps) {
+export function useAutoMixer({ library, isAutomixEnabled, onTransitionStart, onTransitionComplete, onTransitionCancel, onPitchChange }: AutoMixerProps) {
   const animationRef = useRef<number | null>(null);
   const isTransitioning = useRef<boolean>(false);
   const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -29,6 +27,10 @@ export function useAutoMixer({ deckAState, deckBState, library, isAutomixEnabled
     const audio = AudioEngine.getInstance();
 
     const monitorLoop = () => {
+      const state = useMixerStore.getState();
+      const deckAState = state.deckA;
+      const deckBState = state.deckB;
+      
       let activeDeck: 'A' | 'B' | null = null;
       let timePastOutro = -1;
       let fadeDuration = 15;
@@ -59,20 +61,6 @@ export function useAutoMixer({ deckAState, deckBState, library, isAutomixEnabled
         // Ensure fadeDuration is valid
         const safeFadeDuration = Math.max(1, fadeDuration);
         executeAutoTransition(activeDeck, safeFadeDuration);
-      } else if (isTransitioning.current && timePastOutro >= 0 && activeDeck && fadeDuration > 0) {
-        // Manually calculate equal-power curve instead of using linear rampTo
-        const progress = Math.min(1, timePastOutro / fadeDuration); // 0.0 to 1.0
-        
-        // Using trigonometric equal-power formulas
-        // For Deck A -> Deck B: Deck A decreases (cos), Deck B increases (sin)
-        // Since crossfader.fade expects 0 (A) to 1 (B)
-        // A linear change of 0 to 1 already triggers equal power in Tone.js,
-        // but if we want to ensure custom curves per requirements:
-        // We can set the fade value explicitly. 
-        // Note: Tone.CrossFade uses equal power natively when moving linearly from 0 to 1.
-        // But to fulfill the "mathematical calculation" requirement directly:
-        const targetValue = activeDeck === 'A' ? progress : 1 - progress;
-        audio.crossfader.fade.value = targetValue;
       } else if (isTransitioning.current && timePastOutro < 0 && activeDeck) {
         // User scrubbed backward before the outro marker during a transition
         isTransitioning.current = false;
@@ -95,6 +83,10 @@ export function useAutoMixer({ deckAState, deckBState, library, isAutomixEnabled
 
     const executeAutoTransition = async (currentActive: 'A' | 'B' | null, fadeDuration: number) => {
       if (!currentActive) return;
+      
+      const state = useMixerStore.getState();
+      const deckAState = state.deckA;
+      const deckBState = state.deckB;
       
       const nextDeckId = currentActive === 'A' ? 'B' : 'A';
       const targetDeck = nextDeckId === 'A' ? audio.deckA : audio.deckB;
@@ -157,8 +149,8 @@ export function useAutoMixer({ deckAState, deckBState, library, isAutomixEnabled
         onTransitionStart(nextDeckId, nextTrack!);
 
         // 3. Ramp Crossfader
-        // Removed linear rampTo: We are now animating this manually in the monitorLoop
-        // using equal-power math.
+        const targetValue = currentActive === 'A' ? 1 : 0;
+        audio.crossfader.fade.rampTo(targetValue, fadeDuration);
 
         transitionTimeoutRef.current = setTimeout(() => {
           currentDeck.stop();
@@ -177,5 +169,5 @@ export function useAutoMixer({ deckAState, deckBState, library, isAutomixEnabled
     return () => {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
     };
-  }, [deckAState, deckBState, library, isAutomixEnabled, onTransitionComplete, onTransitionStart, onTransitionCancel, onPitchChange]);
+  }, [library, isAutomixEnabled, onTransitionComplete, onTransitionStart, onTransitionCancel, onPitchChange]);
 }

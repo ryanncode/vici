@@ -6,12 +6,11 @@ import { createTrackUrl } from '../services/FileManager';
 import { metadataScanner } from '../services/MetadataScanner';
 
 export function useDeckControl(deckId: 'A' | 'B') {
-  const storeDeck = useMixerStore(state => deckId === 'A' ? state.deckA : state.deckB);
   const setDeckState = useMixerStore(state => state.setDeckState);
   
   const loadTrack = async (inputTrack: Track | TrackMetadata) => {
     try {
-      setDeckState(deckId, { status: 'loading' });
+      setDeckState(deckId, { status: 'loading', track: inputTrack as Track });
       const engine = AudioEngine.getInstance();
       
       if (Tone.context.state !== 'running') {
@@ -76,8 +75,9 @@ export function useDeckControl(deckId: 'A' | 'B') {
   const togglePlayback = () => {
     const engine = AudioEngine.getInstance();
     const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
+    const isPlaying = useMixerStore.getState()[deckId === 'A' ? 'deckA' : 'deckB'].isPlaying;
     
-    if (storeDeck.isPlaying) {
+    if (isPlaying) {
       deckEngine.stop();
       setDeckState(deckId, { isPlaying: false, status: 'ready' });
     } else {
@@ -111,7 +111,7 @@ export function useDeckControl(deckId: 'A' | 'B') {
     }
     
     deckEngine.setPlaybackRate(finalPitch);
-    setDeckState(deckId, { pitch: finalPitch, currentBpm: deckEngine.currentBpm });
+    setDeckState(deckId, { pitch: finalPitch });
     
     const store = useMixerStore.getState();
     const otherDeckId = deckId === 'A' ? 'B' : 'A';
@@ -123,7 +123,7 @@ export function useDeckControl(deckId: 'A' | 'B') {
       if (otherDeckEngine.originalBpm > 0) {
         const requiredPitch = deckEngine.currentBpm / otherDeckEngine.originalBpm;
         otherDeckEngine.setPlaybackRate(requiredPitch);
-        store.setDeckState(otherDeckId, { pitch: requiredPitch, currentBpm: otherDeckEngine.currentBpm });
+        store.setDeckState(otherDeckId, { pitch: requiredPitch });
       }
     }
   };
@@ -131,7 +131,7 @@ export function useDeckControl(deckId: 'A' | 'B') {
   const nudgePitch = (bpmDelta: number) => {
     const engine = AudioEngine.getInstance();
     const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
-    const currentPitch = storeDeck.pitch;
+    const currentPitch = useMixerStore.getState()[deckId === 'A' ? 'deckA' : 'deckB'].pitch;
     if (deckEngine.originalBpm > 0) {
       const currentBpm = deckEngine.originalBpm * currentPitch;
       const targetBpm = currentBpm + bpmDelta;
@@ -144,7 +144,8 @@ export function useDeckControl(deckId: 'A' | 'B') {
   const toggleMute = () => {
     const engine = AudioEngine.getInstance();
     const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
-    const newMute = !storeDeck.mute;
+    const currentMute = useMixerStore.getState()[deckId === 'A' ? 'deckA' : 'deckB'].mute;
+    const newMute = !currentMute;
     deckEngine.player.mute = newMute;
     setDeckState(deckId, { mute: newMute });
   };
@@ -159,7 +160,7 @@ export function useDeckControl(deckId: 'A' | 'B') {
        if (otherDeckEngine.currentBpm > 0 && thisDeckEngine.originalBpm > 0) {
          const requiredPitch = otherDeckEngine.currentBpm / thisDeckEngine.originalBpm;
          thisDeckEngine.setPlaybackRate(requiredPitch);
-         setDeckState(deckId, { pitch: requiredPitch, currentBpm: thisDeckEngine.currentBpm });
+         setDeckState(deckId, { pitch: requiredPitch });
        }
     }
   };
@@ -176,7 +177,7 @@ export function useDeckControl(deckId: 'A' | 'B') {
        if (thisDeckEngine.currentBpm > 0 && otherDeckEngine.originalBpm > 0) {
          const requiredPitch = thisDeckEngine.currentBpm / otherDeckEngine.originalBpm;
          otherDeckEngine.setPlaybackRate(requiredPitch);
-         store.setDeckState(deckId === 'A' ? 'B' : 'A', { pitch: requiredPitch, currentBpm: otherDeckEngine.currentBpm });
+         store.setDeckState(deckId === 'A' ? 'B' : 'A', { pitch: requiredPitch });
        }
     }
   };
@@ -184,8 +185,8 @@ export function useDeckControl(deckId: 'A' | 'B') {
   const handleFxToggle = (fxType: 'delay' | 'reverb' | 'phaser' | 'gate' | 'roll' | 'siren') => {
     const engine = AudioEngine.getInstance();
     const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
-    const currentFx = storeDeck.fx;
     const store = useMixerStore.getState();
+    const currentFx = (deckId === 'A' ? store.deckA : store.deckB).fx;
     
     if (fxType === 'delay') {
       const newState = !currentFx.delayOn;
@@ -237,7 +238,7 @@ export function useDeckControl(deckId: 'A' | 'B') {
   };
 
   return {
-    state: storeDeck,
+    get state() { return useMixerStore.getState()[deckId === 'A' ? 'deckA' : 'deckB']; },
     loadTrack,
     togglePlayback,
     setVolume,

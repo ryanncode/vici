@@ -33,10 +33,6 @@ export interface DeckState {
   outroMarker: number;
   peaks: Float32Array | null;
   segments: TrackSegment[];
-  
-  // Real-time playback stats
-  progress: { current: number; max: number };
-  currentBpm: number;
 }
 
 const initialFxState: FxState = {
@@ -67,8 +63,6 @@ const initialDeckState: DeckState = {
   outroMarker: 0,
   peaks: null,
   segments: [],
-  progress: { current: 0, max: 100 },
-  currentBpm: 0,
 };
 
 export interface MixerState {

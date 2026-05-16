@@ -1,7 +1,9 @@
+import React, { useRef, useEffect } from 'react';
 import { Play, Square } from 'lucide-react';
 import { useDeckControl } from '../hooks/useDeckControl';
 import { Waveform } from './Waveform';
 import { useMixerStore } from '../store/mixerStore';
+import { AudioEngine } from '../services/AudioEngine';
 
 const formatAdjustedTime = (seconds: number, pitch: number) => {
   if (!seconds || isNaN(seconds) || seconds < 0) return '00:00';
@@ -10,11 +12,85 @@ const formatAdjustedTime = (seconds: number, pitch: number) => {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 };
 
-export function Deck({ deckId }: { deckId: 'A' | 'B' }) {
+const DeckBpmText = ({ deckId }: { deckId: 'A' | 'B' }) => {
+  const bpmRef = useRef<HTMLDivElement>(null);
+  
+  useEffect(() => {
+    let lastBpmStr = '';
+    const loop = () => {
+      if (bpmRef.current) {
+        const engine = AudioEngine.getInstance();
+        const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
+        const bpmStr = (deckEngine.player.loaded && deckEngine.currentBpm > 0) ? deckEngine.currentBpm.toFixed(1) : '---';
+        if (bpmStr !== lastBpmStr) {
+          bpmRef.current.innerText = bpmStr;
+          lastBpmStr = bpmStr;
+        }
+      }
+    };
+    const interval = setInterval(loop, 50);
+    return () => clearInterval(interval);
+  }, [deckId]);
+
+  return <div ref={bpmRef} className="text-lg sm:text-xl font-mono font-light text-cyan-400 leading-none">---</div>;
+};
+
+const DeckProgressText = ({ deckId, pitch, isLeft, introMarker, outroMarker, trackKey }: { deckId: 'A' | 'B', pitch: number, isLeft: boolean, introMarker: number, outroMarker: number, trackKey?: string }) => {
+  const timeRef = useRef<HTMLSpanElement>(null);
+  const inRef = useRef<HTMLSpanElement>(null);
+  const outRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    let lastTimeStr = '';
+    let lastInStr = '';
+    let lastOutStr = '';
+    
+    const loop = () => {
+      const engine = AudioEngine.getInstance();
+      const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
+      const current = deckEngine.getCurrentTime();
+      const duration = deckEngine.player.buffer?.duration || 0;
+      
+      if (timeRef.current) {
+        const timeStr = `${formatAdjustedTime(current, pitch)} / ${formatAdjustedTime(duration, pitch)}`;
+        if (timeStr !== lastTimeStr) {
+          timeRef.current.innerHTML = `<span class="text-slate-500">${isLeft ? 'TIME:' : ''}</span> ${timeStr} <span class="text-slate-500">${!isLeft ? ':TIME' : ''}</span>`;
+          lastTimeStr = timeStr;
+        }
+      }
+      if (inRef.current) {
+        const inStr = formatAdjustedTime(introMarker, pitch);
+        if (inStr !== lastInStr) {
+          inRef.current.innerHTML = `<span class="text-slate-500">${isLeft ? 'IN:' : ''}</span> ${inStr} <span class="text-slate-500">${!isLeft ? ':IN' : ''}</span>`;
+          lastInStr = inStr;
+        }
+      }
+      if (outRef.current && duration > 0) {
+        const outStr = formatAdjustedTime(duration - outroMarker, pitch);
+        if (outStr !== lastOutStr) {
+          outRef.current.innerHTML = `<span class="text-slate-500">${isLeft ? 'OUT:' : ''}</span> ${outStr} <span class="text-slate-500">${!isLeft ? ':OUT' : ''}</span>`;
+          lastOutStr = outStr;
+        }
+      }
+    };
+    const interval = setInterval(loop, 50);
+    return () => clearInterval(interval);
+  }, [deckId, pitch, isLeft, introMarker, outroMarker]);
+
+  return (
+    <div className={`flex gap-2 sm:gap-3 text-[9px] sm:text-[10px] font-mono text-slate-400 ${!isLeft ? 'flex-row-reverse' : ''}`}>
+      <span ref={timeRef}></span>
+      <span ref={inRef} className="hidden sm:inline"></span>
+      <span ref={outRef} className="hidden sm:inline"></span>
+      {trackKey && <span className="hidden lg:inline"><span className="text-slate-600">{isLeft ? 'KEY:' : ''}</span> {trackKey} <span className="text-slate-600">{!isLeft ? ':KEY' : ''}</span></span>}
+    </div>
+  );
+};
+
+export const Deck = React.memo(function Deck({ deckId }: { deckId: 'A' | 'B' }) {
+  const state = useMixerStore(s => s[deckId === 'A' ? 'deckA' : 'deckB']);
   const { 
-    state, 
     togglePlayback, 
-    seek, 
     setPitch, 
     nudgePitch, 
     toggleMute, 
@@ -24,11 +100,20 @@ export function Deck({ deckId }: { deckId: 'A' | 'B' }) {
     handleFxParamChange
   } = useDeckControl(deckId);
   
+  const handleSeek = React.useCallback((time: number) => {
+    AudioEngine.getInstance()[deckId === 'A' ? 'deckA' : 'deckB'].seek(time);
+  }, [deckId]);
+  const handleMarkerChange = React.useCallback((type: 'intro' | 'outro', time: number) => {
+    useMixerStore.getState().setDeckState(deckId, { [type === 'intro' ? 'introMarker' : 'outroMarker']: time });
+  }, [deckId]);
+
   const masterDeck = useMixerStore(s => s.masterDeck);
 
   const isLeft = deckId === 'A';
   const color = isLeft ? '#3b82f6' : '#06b6d4';
   const colorClassText = isLeft ? 'text-blue-500' : 'text-cyan-500';
+
+  const scrollRef = useRef({ time: 0, multiplier: 1 });
 
   const handleSliderWheel = (e: React.WheelEvent<HTMLInputElement>) => {
     if (e.currentTarget.type !== 'range') return;
@@ -40,7 +125,16 @@ export function Deck({ deckId }: { deckId: 'A' | 'B' }) {
     
     if (isNaN(baseStep)) return;
 
-    let effectiveStep = baseStep;
+    const now = Date.now();
+    const timeSinceLast = now - scrollRef.current.time;
+    if (timeSinceLast < 50) {
+      scrollRef.current.multiplier = Math.min(20, scrollRef.current.multiplier + 1);
+    } else if (timeSinceLast > 250) {
+      scrollRef.current.multiplier = 1;
+    }
+    scrollRef.current.time = now;
+    
+    let effectiveStep = baseStep * scrollRef.current.multiplier;
     const maxAllowedStep = (max - min) * 0.1;
     if (effectiveStep > maxAllowedStep) effectiveStep = maxAllowedStep;
     
@@ -63,15 +157,14 @@ export function Deck({ deckId }: { deckId: 'A' | 'B' }) {
       {/* Waveform */}
       <div className="h-10 sm:h-12 lg:h-16 w-full shrink-0 rounded overflow-hidden shadow-inner bg-slate-950/50">
         <Waveform 
+          deckId={deckId}
           peaks={state.peaks}
           segments={state.segments}
-          currentTime={state.progress.current}
-          duration={state.progress.max}
           introMarker={state.introMarker}
           outroMarker={state.outroMarker}
           color={color}
-          onSeek={seek}
-          onMarkerChange={() => {}}
+          onSeek={handleSeek}
+          onMarkerChange={handleMarkerChange}
         />
       </div>
 
@@ -101,17 +194,19 @@ export function Deck({ deckId }: { deckId: 'A' | 'B' }) {
               <p className="text-[10px] sm:text-xs text-slate-400 truncate">{state.track?.artist || 'Ready to load'}</p>
             </div>
             <div className={`shrink-0 ${isLeft ? 'text-right' : 'text-left'}`}>
-              <div className="text-lg sm:text-xl font-mono font-light text-cyan-400 leading-none">{state.track ? state.currentBpm.toFixed(1) : '---'}</div>
+              <DeckBpmText deckId={deckId} />
               <div className="text-[8px] sm:text-[9px] uppercase text-slate-500 font-bold tracking-widest mt-0.5">BPM</div>
             </div>
           </div>
           {state.track && (
-            <div className={`flex gap-2 sm:gap-3 text-[9px] sm:text-[10px] font-mono text-slate-400 ${!isLeft ? 'flex-row-reverse' : ''}`}>
-              <span><span className="text-slate-500">{isLeft ? 'TIME:' : ''}</span> {formatAdjustedTime(state.progress.current, state.pitch)} / {formatAdjustedTime(state.progress.max, state.pitch)} <span className="text-slate-500">{!isLeft ? ':TIME' : ''}</span></span>
-              <span className="hidden sm:inline"><span className="text-slate-500">{isLeft ? 'IN:' : ''}</span> {formatAdjustedTime(state.introMarker, state.pitch)} <span className="text-slate-500">{!isLeft ? ':IN' : ''}</span></span>
-              <span className="hidden sm:inline"><span className="text-slate-500">{isLeft ? 'OUT:' : ''}</span> {formatAdjustedTime(state.progress.max - state.outroMarker, state.pitch)} <span className="text-slate-500">{!isLeft ? ':OUT' : ''}</span></span>
-              {state.track.key && <span className="hidden lg:inline"><span className="text-slate-600">{isLeft ? 'KEY:' : ''}</span> {state.track.key} <span className="text-slate-600">{!isLeft ? ':KEY' : ''}</span></span>}
-            </div>
+            <DeckProgressText 
+              deckId={deckId} 
+              pitch={state.pitch} 
+              isLeft={isLeft} 
+              introMarker={state.introMarker} 
+              outroMarker={state.outroMarker} 
+              trackKey={state.track.key} 
+            />
           )}
         </div>
 
@@ -128,6 +223,21 @@ export function Deck({ deckId }: { deckId: 'A' | 'B' }) {
                 value={state.pitch} 
                 onChange={(e) => setPitch(parseFloat(e.target.value))}
                 onDoubleClick={() => setPitch(1.0)}
+                onWheel={(e) => {
+                  e.preventDefault();
+                  const now = Date.now();
+                  const timeSinceLast = now - scrollRef.current.time;
+                  if (timeSinceLast < 50) {
+                    scrollRef.current.multiplier = Math.min(20, scrollRef.current.multiplier + 1);
+                  } else if (timeSinceLast > 250) {
+                    scrollRef.current.multiplier = 1;
+                  }
+                  scrollRef.current.time = now;
+                  
+                  let amt = 0.1 * scrollRef.current.multiplier;
+                  if (amt > 2.0) amt = 2.0;
+                  nudgePitch(e.deltaY > 0 ? -amt : amt);
+                }}
                 className={`flex-1 w-full h-1 bg-slate-800 rounded-full appearance-none cursor-pointer accent-${isLeft ? 'blue' : 'cyan'}-500 shadow-inner min-w-0`} 
               />
               <button onClick={() => nudgePitch(0.1)} className="text-[10px] text-slate-500 hover:text-slate-200 font-bold leading-none select-none px-1 py-0.5 rounded hover:bg-slate-800">+</button>
@@ -169,9 +279,9 @@ export function Deck({ deckId }: { deckId: 'A' | 'B' }) {
             <input type="range" min="0" max="0.95" step="0.01" value={state.fx.delayFeedback} onChange={(e) => handleFxParamChange('delay', 'feedback', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('delay', 'feedback', 0.5)} onWheel={handleSliderWheel} className={`flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400 ${!isLeft ? 'rotate-180' : ''}`} />
           </div>
           <div className={`flex gap-1 -mt-1 flex-wrap ${isLeft ? 'justify-end' : 'justify-start flex-row-reverse'}`}>
-            <button onClick={() => handleFxParamChange('delay', 'time', Math.min(1, 60 / (state.currentBpm || 120)))} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">1/4</button>
-            <button onClick={() => handleFxParamChange('delay', 'time', Math.min(1, (60 / (state.currentBpm || 120)) * 0.5))} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">1/8</button>
-            <button onClick={() => handleFxParamChange('delay', 'time', Math.min(1, (60 / (state.currentBpm || 120)) * 0.25))} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">1/16</button>
+            <button onClick={() => { const bpm = AudioEngine.getInstance()[deckId === 'A' ? 'deckA' : 'deckB'].currentBpm; handleFxParamChange('delay', 'time', Math.min(1, 60 / (bpm || 120))); }} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">1/4</button>
+            <button onClick={() => { const bpm = AudioEngine.getInstance()[deckId === 'A' ? 'deckA' : 'deckB'].currentBpm; handleFxParamChange('delay', 'time', Math.min(1, (60 / (bpm || 120)) * 0.5)); }} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">1/8</button>
+            <button onClick={() => { const bpm = AudioEngine.getInstance()[deckId === 'A' ? 'deckA' : 'deckB'].currentBpm; handleFxParamChange('delay', 'time', Math.min(1, (60 / (bpm || 120)) * 0.25)); }} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">1/16</button>
           </div>
         </div>
 
@@ -204,9 +314,9 @@ export function Deck({ deckId }: { deckId: 'A' | 'B' }) {
             <input type="range" min="0.1" max="10" step="0.1" value={state.fx.phaserRate} onChange={(e) => handleFxParamChange('phaser', 'rate', parseFloat(e.target.value))} onDoubleClick={() => handleFxParamChange('phaser', 'rate', 0.5)} onWheel={handleSliderWheel} className={`flex-1 min-w-0 h-1 bg-slate-800 rounded appearance-none accent-slate-400 ${!isLeft ? 'rotate-180' : ''}`} />
           </div>
           <div className={`flex gap-1 -mt-1 flex-wrap ${isLeft ? 'justify-end' : 'justify-start flex-row-reverse'}`}>
-            <button onClick={() => handleFxParamChange('phaser', 'rate', Math.min(10, ((state.currentBpm || 120) / 60) * 0.25))} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">4 BARS</button>
-            <button onClick={() => handleFxParamChange('phaser', 'rate', Math.min(10, ((state.currentBpm || 120) / 60) * 0.5))} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">2 BARS</button>
-            <button onClick={() => handleFxParamChange('phaser', 'rate', Math.min(10, (state.currentBpm || 120) / 60))} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">1 BAR</button>
+            <button onClick={() => { const bpm = AudioEngine.getInstance()[deckId === 'A' ? 'deckA' : 'deckB'].currentBpm; handleFxParamChange('phaser', 'rate', Math.min(10, ((bpm || 120) / 60) * 0.25)); }} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">4 BARS</button>
+            <button onClick={() => { const bpm = AudioEngine.getInstance()[deckId === 'A' ? 'deckA' : 'deckB'].currentBpm; handleFxParamChange('phaser', 'rate', Math.min(10, ((bpm || 120) / 60) * 0.5)); }} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">2 BARS</button>
+            <button onClick={() => { const bpm = AudioEngine.getInstance()[deckId === 'A' ? 'deckA' : 'deckB'].currentBpm; handleFxParamChange('phaser', 'rate', Math.min(10, (bpm || 120) / 60)); }} className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[6px] sm:text-[7px] font-bold text-slate-400 transition-colors">1 BAR</button>
           </div>
         </div>
 
@@ -214,4 +324,4 @@ export function Deck({ deckId }: { deckId: 'A' | 'B' }) {
 
     </div>
   );
-}
+});

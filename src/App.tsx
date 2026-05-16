@@ -19,40 +19,18 @@ export default function App() {
     onRegisterError(error: unknown) { console.error('SW registration error', error); },
   });
 
-  const store = useMixerStore();
-  const deckAState = store.deckA;
-  const deckBState = store.deckB;
+  const isAutomixEnabled = useMixerStore(state => state.isAutomixEnabled);
+  const deckATrack = useMixerStore(state => state.deckA.track);
+  const deckBTrack = useMixerStore(state => state.deckB.track);
+  const setDeckState = useMixerStore(state => state.setDeckState);
+  const setCrossfade = useMixerStore(state => state.setCrossfade);
+  
   const { displayTracks } = useLibrary();
   const deckAControl = useDeckControl('A');
   const deckBControl = useDeckControl('B');
   
   const [mixerHeightPct] = useState(65);
   const [isLibraryMaximized, setIsLibraryMaximized] = useState(false);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const engine = AudioEngine.getInstance();
-      
-      if (engine.deckA.player.buffer) {
-        store.setDeckState('A', {
-          progress: { current: engine.deckA.getCurrentTime(), max: engine.deckA.player.buffer.duration },
-          currentBpm: engine.deckA.currentBpm
-        });
-      }
-      
-      if (engine.deckB.player.buffer) {
-        store.setDeckState('B', {
-          progress: { current: engine.deckB.getCurrentTime(), max: engine.deckB.player.buffer.duration },
-          currentBpm: engine.deckB.currentBpm
-        });
-      }
-
-      if (store.isAutomixEnabled) {
-        store.setCrossfade(engine.crossfader.fade.value as number);
-      }
-    }, 50);
-    return () => clearInterval(interval);
-  }, [store.isAutomixEnabled]);
 
   const getNextTrack = (currentTrackId?: string): Track | null => {
     if (displayTracks.length === 0) return null;
@@ -68,22 +46,22 @@ export default function App() {
     if (winningDeck === 'A') {
       const segments = nextTrack.segments || engine.deckA.segments;
       const defaultOutro = segments.find(s => s.type === 'outro')?.start || (engine.deckA.player.buffer ? Math.max(0, engine.deckA.player.buffer.duration - 15) : 0);
-      store.setDeckState('A', { track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || defaultOutro, peaks: nextTrack.waveformPeaks || engine.deckA.peaks, segments });
-      store.setDeckState('B', { isPlaying: false });
-      store.setCrossfade(0);
+      setDeckState('A', { track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || defaultOutro, peaks: nextTrack.waveformPeaks || engine.deckA.peaks, segments });
+      setDeckState('B', { isPlaying: false });
+      setCrossfade(0);
 
-      if (store.isAutomixEnabled) {
+      if (isAutomixEnabled) {
         const next = getNextTrack(nextTrack.id);
         if (next) deckBControl.loadTrack(next);
       }
     } else {
       const segments = nextTrack.segments || engine.deckB.segments;
       const defaultOutro = segments.find(s => s.type === 'outro')?.start || (engine.deckB.player.buffer ? Math.max(0, engine.deckB.player.buffer.duration - 15) : 0);
-      store.setDeckState('B', { track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || defaultOutro, peaks: nextTrack.waveformPeaks || engine.deckB.peaks, segments });
-      store.setDeckState('A', { isPlaying: false });
-      store.setCrossfade(1);
+      setDeckState('B', { track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || defaultOutro, peaks: nextTrack.waveformPeaks || engine.deckB.peaks, segments });
+      setDeckState('A', { isPlaying: false });
+      setCrossfade(1);
 
-      if (store.isAutomixEnabled) {
+      if (isAutomixEnabled) {
         const next = getNextTrack(nextTrack.id);
         if (next) deckAControl.loadTrack(next);
       }
@@ -95,44 +73,42 @@ export default function App() {
     if (winningDeck === 'A') {
       const segments = nextTrack.segments || engine.deckA.segments;
       const defaultOutro = segments.find(s => s.type === 'outro')?.start || (engine.deckA.player.buffer ? Math.max(0, engine.deckA.player.buffer.duration - 15) : 0);
-      store.setDeckState('A', { track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || defaultOutro, peaks: nextTrack.waveformPeaks || engine.deckA.peaks, segments });
+      setDeckState('A', { track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || defaultOutro, peaks: nextTrack.waveformPeaks || engine.deckA.peaks, segments });
     } else {
       const segments = nextTrack.segments || engine.deckB.segments;
       const defaultOutro = segments.find(s => s.type === 'outro')?.start || (engine.deckB.player.buffer ? Math.max(0, engine.deckB.player.buffer.duration - 15) : 0);
-      store.setDeckState('B', { track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || defaultOutro, peaks: nextTrack.waveformPeaks || engine.deckB.peaks, segments });
+      setDeckState('B', { track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || defaultOutro, peaks: nextTrack.waveformPeaks || engine.deckB.peaks, segments });
     }
   };
 
   const handleTransitionCancel = (cancelledDeck: 'A' | 'B') => {
     if (cancelledDeck === 'A') {
-      store.setDeckState('A', { isPlaying: false });
+      setDeckState('A', { isPlaying: false });
     } else {
-      store.setDeckState('B', { isPlaying: false });
+      setDeckState('B', { isPlaying: false });
     }
   };
 
   // Pre-load logic when automix is turned on and one deck is empty
   useEffect(() => {
-    if (!store.isAutomixEnabled) return;
+    if (!isAutomixEnabled) return;
     
     const timer = setTimeout(() => {
-      if (deckAState.track && !deckBState.track) {
-        const next = getNextTrack(deckAState.track.id);
+      if (deckATrack && !deckBTrack) {
+        const next = getNextTrack(deckATrack.id);
         if (next) deckBControl.loadTrack(next);
-      } else if (deckBState.track && !deckAState.track) {
-        const next = getNextTrack(deckBState.track.id);
+      } else if (deckBTrack && !deckATrack) {
+        const next = getNextTrack(deckBTrack.id);
         if (next) deckAControl.loadTrack(next);
       }
     }, 100);
     
     return () => clearTimeout(timer);
-  }, [store.isAutomixEnabled, deckAState.track, deckBState.track]);
+  }, [isAutomixEnabled, deckATrack, deckBTrack]);
 
   useAutoMixer({
-    deckAState: deckAState,
-    deckBState: deckBState,
     library: displayTracks as Track[],
-    isAutomixEnabled: store.isAutomixEnabled,
+    isAutomixEnabled: isAutomixEnabled,
     onTransitionStart: handleTransitionStart,
     onTransitionComplete: handleTransitionComplete,
     onTransitionCancel: handleTransitionCancel,

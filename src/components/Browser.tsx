@@ -12,7 +12,7 @@ const formatDuration = (seconds: number | string) => {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 };
 
-export function Browser() {
+export const Browser = React.memo(function Browser() {
   const libraryStore = useLibrary();
   const deckAControl = useDeckControl('A');
   const deckBControl = useDeckControl('B');
@@ -123,4 +123,4 @@ export function Browser() {
       </div>
     </div>
   );
-}
+});
