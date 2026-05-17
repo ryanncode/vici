@@ -73,6 +73,14 @@ export class Deck {
       this.faustNode.setParamValue('/engine/eq_low', 0.0);
       this.faustNode.setParamValue('/engine/eq_mid', 0.0);
       this.faustNode.setParamValue('/engine/eq_high', 0.0);
+      
+      // FX Defaults
+      this.faustNode.setParamValue('/engine/fx_delay_on', 0);
+      this.faustNode.setParamValue('/engine/fx_reverb_on', 0);
+      this.faustNode.setParamValue('/engine/fx_phaser_on', 0);
+      this.faustNode.setParamValue('/engine/fx_gate_on', 0);
+      this.faustNode.setParamValue('/engine/fx_roll_on', 0);
+      this.faustNode.setParamValue('/engine/fx_siren_on', 0);
 
       // 3. Connect Graph: Track -> Faust -> Output
       if (this.faustNode) {
@@ -179,16 +187,41 @@ export class Deck {
       this.faustNode.setParamValue('/engine/filter', value);
     }
   }
-  public setDelayState(_isOn: boolean): void {}
-  public setDelayFeedback(_value: number): void {}
-  public setDelayTime(_timeInSeconds: number): void {}
-  public setReverbState(_isOn: boolean): void {}
-  public setReverbSize(_value: number): void {}
-  public setPhaserState(_isOn: boolean): void {}
-  public setPhaserRate(_rateHz: number): void {}
-  public setGateState(_isOn: boolean): void {}
-  public triggerSiren(_isOn: boolean): void {}
-  public setRoll(_isActive: boolean, _rate: number = 8): void {}
+  public setDelayState(isOn: boolean): void {
+    if (this.faustNode) this.faustNode.setParamValue('/engine/fx_delay_on', isOn ? 1 : 0);
+  }
+  public setDelayFeedback(value: number): void {
+    if (this.faustNode) this.faustNode.setParamValue('/engine/fx_delay_feedback', value);
+  }
+  public setDelayTime(timeInSeconds: number): void {
+    if (this.faustNode) this.faustNode.setParamValue('/engine/fx_delay_time', timeInSeconds);
+  }
+  public setReverbState(isOn: boolean): void {
+    if (this.faustNode) this.faustNode.setParamValue('/engine/fx_reverb_on', isOn ? 1 : 0);
+  }
+  public setReverbSize(value: number): void {
+    if (this.faustNode) this.faustNode.setParamValue('/engine/fx_reverb_size', value);
+  }
+  public setPhaserState(isOn: boolean): void {
+    if (this.faustNode) this.faustNode.setParamValue('/engine/fx_phaser_on', isOn ? 1 : 0);
+  }
+  public setPhaserRate(rateHz: number): void {
+    if (this.faustNode) this.faustNode.setParamValue('/engine/fx_phaser_rate', rateHz);
+  }
+  public setGateState(isOn: boolean): void {
+    if (this.faustNode) this.faustNode.setParamValue('/engine/fx_gate_on', isOn ? 1 : 0);
+  }
+  public triggerSiren(isOn: boolean): void {
+    if (this.faustNode) this.faustNode.setParamValue('/engine/fx_siren_on', isOn ? 1 : 0);
+  }
+  public setRoll(isActive: boolean, _rate: number = 8): void {
+    if (this.faustNode) {
+      this.faustNode.setParamValue('/engine/fx_roll_on', isActive ? 1 : 0);
+      if (isActive && this.currentBpm > 0) {
+        this.faustNode.setParamValue('/engine/fx_roll_bpm', this.currentBpm);
+      }
+    }
+  }
 
   public setChannelVolume(linearGain: number): void {
     this.channelVolume = linearGain;

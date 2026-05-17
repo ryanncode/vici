@@ -10,7 +10,10 @@
         "/usr/share/faust/platform.lib",
         "/usr/share/faust/filters.lib",
         "/usr/share/faust/analyzers.lib",
-        "/usr/share/faust/basics.lib"
+        "/usr/share/faust/basics.lib",
+        "/usr/share/faust/delays.lib",
+        "/usr/share/faust/oscillators.lib",
+        "/usr/share/faust/envelopes.lib"
     ],
     "include_pathnames": [
         "/faust/user/inc0",
@@ -19,8 +22,8 @@
         "/usr/share/faust",
         "."
     ],
-    "size": 428,
-    "code": "aO8sAVQ8Hw==",
+    "size": 17106804,
+    "code": "cL+tAVQ8Hw==",
     "inputs": 2,
     "outputs": 2,
     "meta": [
@@ -34,10 +37,37 @@
             "basics.lib/name": "Faust Basic Element Library"
         },
         {
+            "basics.lib/sAndH:author": "Romain Michon"
+        },
+        {
             "basics.lib/version": "1.22.0"
         },
         {
             "compile_options": "-lang wasm-i -fpga-mem-th 4 -ct 1 -es 1 -mcd 16 -mdd 1024 -mdy 33 -single -ftz 2"
+        },
+        {
+            "delays.lib/name": "Faust Delay Library"
+        },
+        {
+            "delays.lib/version": "1.2.0"
+        },
+        {
+            "envelopes.lib/adsr:author": "Yann Orlarey and Andrey Bundin"
+        },
+        {
+            "envelopes.lib/author": "GRAME"
+        },
+        {
+            "envelopes.lib/copyright": "GRAME"
+        },
+        {
+            "envelopes.lib/license": "LGPL with exception"
+        },
+        {
+            "envelopes.lib/name": "Faust Envelope Library"
+        },
+        {
+            "envelopes.lib/version": "1.3.0"
         },
         {
             "filename": "engine"
@@ -205,6 +235,24 @@
             "name": "engine"
         },
         {
+            "oscillators.lib/lf_sawpos:author": "Bart Brouns, revised by Stéphane Letz"
+        },
+        {
+            "oscillators.lib/lf_sawpos:licence": "STK-4.3"
+        },
+        {
+            "oscillators.lib/name": "Faust Oscillator Library"
+        },
+        {
+            "oscillators.lib/sawN:author": "Julius O. Smith III"
+        },
+        {
+            "oscillators.lib/sawN:license": "STK-4.3"
+        },
+        {
+            "oscillators.lib/version": "1.7.0"
+        },
+        {
             "platform.lib/name": "Generic Platform Library"
         },
         {
@@ -225,10 +273,10 @@
                 {
                     "type": "hslider",
                     "label": "eq_high",
-                    "varname": "fHslider3",
+                    "varname": "fHslider10",
                     "shortname": "eq_high",
                     "address": "/engine/eq_high",
-                    "index": 240,
+                    "index": 262512,
                     "init": 0,
                     "min": -24,
                     "max": 6,
@@ -237,10 +285,10 @@
                 {
                     "type": "hslider",
                     "label": "eq_low",
-                    "varname": "fHslider1",
+                    "varname": "fHslider8",
                     "shortname": "eq_low",
                     "address": "/engine/eq_low",
-                    "index": 116,
+                    "index": 262388,
                     "init": 0,
                     "min": -24,
                     "max": 6,
@@ -249,10 +297,10 @@
                 {
                     "type": "hslider",
                     "label": "eq_mid",
-                    "varname": "fHslider2",
+                    "varname": "fHslider9",
                     "shortname": "eq_mid",
                     "address": "/engine/eq_mid",
-                    "index": 152,
+                    "index": 262424,
                     "init": 0,
                     "min": -24,
                     "max": 6,
@@ -261,13 +309,157 @@
                 {
                     "type": "hslider",
                     "label": "filter",
-                    "varname": "fHslider4",
+                    "varname": "fHslider16",
                     "shortname": "filter",
                     "address": "/engine/filter",
-                    "index": 256,
+                    "index": 8685176,
                     "init": 0,
                     "min": -100,
                     "max": 100,
+                    "step": 1
+                },
+                {
+                    "type": "hslider",
+                    "label": "fx_delay_feedback",
+                    "varname": "fHslider5",
+                    "shortname": "fx_delay_feedback",
+                    "address": "/engine/fx_delay_feedback",
+                    "index": 262256,
+                    "init": 0.5,
+                    "min": 0,
+                    "max": 0.95,
+                    "step": 0.01
+                },
+                {
+                    "type": "hslider",
+                    "label": "fx_delay_on",
+                    "varname": "fHslider7",
+                    "shortname": "fx_delay_on",
+                    "address": "/engine/fx_delay_on",
+                    "index": 262300,
+                    "init": 0,
+                    "min": 0,
+                    "max": 1,
+                    "step": 1
+                },
+                {
+                    "type": "hslider",
+                    "label": "fx_delay_time",
+                    "varname": "fHslider6",
+                    "shortname": "fx_delay_time",
+                    "address": "/engine/fx_delay_time",
+                    "index": 262276,
+                    "init": 0.5,
+                    "min": 0,
+                    "max": 2,
+                    "step": 0.01
+                },
+                {
+                    "type": "hslider",
+                    "label": "fx_gate_on",
+                    "varname": "fHslider1",
+                    "shortname": "fx_gate_on",
+                    "address": "/engine/fx_gate_on",
+                    "index": 262180,
+                    "init": 0,
+                    "min": 0,
+                    "max": 1,
+                    "step": 1
+                },
+                {
+                    "type": "hslider",
+                    "label": "fx_gate_rate",
+                    "varname": "fHslider2",
+                    "shortname": "fx_gate_rate",
+                    "address": "/engine/fx_gate_rate",
+                    "index": 262196,
+                    "init": 4,
+                    "min": 1,
+                    "max": 32,
+                    "step": 0.1
+                },
+                {
+                    "type": "hslider",
+                    "label": "fx_phaser_on",
+                    "varname": "fHslider4",
+                    "shortname": "fx_phaser_on",
+                    "address": "/engine/fx_phaser_on",
+                    "index": 262244,
+                    "init": 0,
+                    "min": 0,
+                    "max": 1,
+                    "step": 1
+                },
+                {
+                    "type": "hslider",
+                    "label": "fx_phaser_rate",
+                    "varname": "fHslider13",
+                    "shortname": "fx_phaser_rate",
+                    "address": "/engine/fx_phaser_rate",
+                    "index": 4489656,
+                    "init": 1,
+                    "min": 0.1,
+                    "max": 10,
+                    "step": 0.01
+                },
+                {
+                    "type": "hslider",
+                    "label": "fx_reverb_on",
+                    "varname": "fHslider11",
+                    "shortname": "fx_reverb_on",
+                    "address": "/engine/fx_reverb_on",
+                    "index": 4489628,
+                    "init": 0,
+                    "min": 0,
+                    "max": 1,
+                    "step": 1
+                },
+                {
+                    "type": "hslider",
+                    "label": "fx_reverb_size",
+                    "varname": "fHslider12",
+                    "shortname": "fx_reverb_size",
+                    "address": "/engine/fx_reverb_size",
+                    "index": 4489640,
+                    "init": 0.5,
+                    "min": 0,
+                    "max": 1,
+                    "step": 0.01
+                },
+                {
+                    "type": "hslider",
+                    "label": "fx_roll_bpm",
+                    "varname": "fHslider14",
+                    "shortname": "fx_roll_bpm",
+                    "address": "/engine/fx_roll_bpm",
+                    "index": 4489724,
+                    "init": 120,
+                    "min": 30,
+                    "max": 300,
+                    "step": 0.1
+                },
+                {
+                    "type": "hslider",
+                    "label": "fx_roll_on",
+                    "varname": "fHslider3",
+                    "shortname": "fx_roll_on",
+                    "address": "/engine/fx_roll_on",
+                    "index": 262224,
+                    "init": 0,
+                    "min": 0,
+                    "max": 1,
+                    "step": 1
+                },
+                {
+                    "type": "hslider",
+                    "label": "fx_siren_on",
+                    "varname": "fHslider15",
+                    "shortname": "fx_siren_on",
+                    "address": "/engine/fx_siren_on",
+                    "index": 8685136,
+                    "init": 0,
+                    "min": 0,
+                    "max": 1,
                     "step": 1
                 },
                 {
@@ -276,7 +468,7 @@
                     "varname": "fHslider0",
                     "shortname": "volume",
                     "address": "/engine/volume",
-                    "index": 12,
+                    "index": 262156,
                     "init": 1,
                     "min": 0,
                     "max": 1.5,
