@@ -95,7 +95,11 @@ export function useDeckControl(deckId: 'A' | 'B') {
     }
   };
 
-  const togglePlayback = () => {
+  const togglePlayback = async () => {
+    if (Tone.context.state !== 'running') {
+      Tone.setContext(new Tone.Context({ latencyHint: 'playback' }));
+      await Tone.start();
+    }
     const engine = AudioEngine.getInstance();
     const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
     const isPlaying = useMixerStore.getState()[deckId === 'A' ? 'deckA' : 'deckB'].isPlaying;

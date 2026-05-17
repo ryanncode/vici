@@ -76,11 +76,9 @@ export class Deck {
       this.player.stop();
     }
     
-    // Explicit GC of old buffer before loading new one
-    if (this.player.buffer) {
-      this.player.buffer.dispose();
-    }
-    
+    // Tone.js automatically replaces the internal buffer when load() is called.
+    // Explicitly disposing the buffer causes silent failures, and destroying the player 
+    // breaks UI references. Letting the browser GC handle the orphaned buffer is safest.
     await this.player.load(url);
     this.currentPositionOffset = 0;
     this.lastRateChangeTime = Tone.context.currentTime;
@@ -119,7 +117,9 @@ export class Deck {
     if (this.player.state !== "started") {
       return this.currentPositionOffset;
     }
-    return this.currentPositionOffset + (Tone.context.currentTime - this.lastRateChangeTime) * this.player.playbackRate;
+    const now = Tone.context.currentTime;
+    const rate = this.originalBpm > 0 ? this.currentBpm / this.originalBpm : 1;
+    return this.currentPositionOffset + (now - this.lastRateChangeTime) * rate;
   }
 
   public seek(time: number): void {
@@ -138,7 +138,8 @@ export class Deck {
   public setPlaybackRate(rate: number): void {
     if (this.player.state === "started") {
       const now = Tone.context.currentTime;
-      this.currentPositionOffset += (now - this.lastRateChangeTime) * this.player.playbackRate;
+      const currentRate = this.originalBpm > 0 ? this.currentBpm / this.originalBpm : 1;
+      this.currentPositionOffset += (now - this.lastRateChangeTime) * currentRate;
       this.lastRateChangeTime = now;
     }
     this.player.playbackRate = rate;

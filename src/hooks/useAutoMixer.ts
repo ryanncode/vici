@@ -15,15 +15,24 @@ interface AutoMixerProps {
 }
 
 export function useAutoMixer({ library, isAutomixEnabled, onTransitionStart, onTransitionComplete, onTransitionCancel, onPitchChange }: AutoMixerProps) {
-  const animationRef = useRef<number | null>(null);
+  const workerRef = useRef<Worker | null>(null);
   const isTransitioning = useRef<boolean>(false);
   const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!isAutomixEnabled) {
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      if (workerRef.current) {
+        workerRef.current.postMessage('stop');
+        workerRef.current.terminate();
+        workerRef.current = null;
+      }
       return;
     }
+
+    if (!workerRef.current) {
+      workerRef.current = new Worker(new URL('../workers/timer.worker.ts', import.meta.url), { type: 'module' });
+    }
+
     const audio = AudioEngine.getInstance();
 
     const monitorLoop = () => {
@@ -77,9 +86,14 @@ export function useAutoMixer({ library, isAutomixEnabled, onTransitionStart, onT
         
         onTransitionCancel(targetDeckId);
       }
-
-      animationRef.current = requestAnimationFrame(monitorLoop);
     };
+
+    workerRef.current.onmessage = (e) => {
+      if (e.data === 'tick') {
+        monitorLoop();
+      }
+    };
+    workerRef.current.postMessage('start');
 
     const executeAutoTransition = async (currentActive: 'A' | 'B' | null, fadeDuration: number) => {
       if (!currentActive) return;
@@ -164,10 +178,15 @@ export function useAutoMixer({ library, isAutomixEnabled, onTransitionStart, onT
       }
     };
 
-    animationRef.current = requestAnimationFrame(monitorLoop);
-
     return () => {
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      if (transitionTimeoutRef.current) {
+        clearTimeout(transitionTimeoutRef.current);
+      }
+      if (workerRef.current) {
+        workerRef.current.postMessage('stop');
+        workerRef.current.terminate();
+        workerRef.current = null;
+      }
     };
   }, [library, isAutomixEnabled, onTransitionComplete, onTransitionStart, onTransitionCancel, onPitchChange]);
 }
