@@ -66,6 +66,16 @@ Vici is a high-performance, web-based dual-deck DJ auto-mixing application. Buil
 6. Adjust the green (IN) and red (OUT) markers on the waveform to set custom crossfade boundaries.
 7. Toggle **Automix Mode** in the header to let the engine take over crossfading and queuing automatically.
 
+## Architecture & Roadmap
+
+Vici is built with a decoupled architecture where the React UI, Zustand state, Dexie database, and file management system operate independently from the audio engine. Currently, the audio engine leverages Tone.js to provide robust, high-level DSP components (parametric EQs, pitch shifters, and complex reverbs) for rapid development and stable prototyping.
+
+As the project scales to support more intensive real-time manipulation, we are evaluating several optimization paths to further reduce main-thread audio starvation:
+
+- **Browser-Specific Optimizations:** Due to varying implementations of the Web Audio API and hardware buffering support, Vici is currently optimized for Chromium-based browsers (Chrome, Edge) and Safari. 
+- **Hybrid AudioWorklet Migration:** Future releases will begin isolating high-demand DSP nodes into dedicated `Tone.AudioWorkletNode` instances. Running complex effects in an elevated Worklet context will reduce the processing burden on the primary web audio thread.
+- **WebAssembly (Wasm) Engine:** The long-term roadmap includes the potential to replace the JavaScript audio graph with a custom DSP engine written in C++ or Rust (via frameworks like RNBO or FAUST) compiled to WebAssembly. This engine would run entirely within an isolated `AudioWorklet`, controlled by the React frontend, rendering the audio pipeline maximally resistant to UI thread latency.
+
 ## License
 
 This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
