@@ -1,3 +1,26 @@
+const CROSSINGS = 16;
+const RESOLUTION = 128;
+const sincTable = new Float32Array(CROSSINGS * RESOLUTION);
+
+// Precompute Windowed Sinc Table (Blackman Window)
+for (let i = 0; i < sincTable.length; i++) {
+  const x = i / RESOLUTION;
+  if (x === 0) {
+    sincTable[i] = 1.0;
+  } else {
+    const piX = Math.PI * x;
+    const sinc = Math.sin(piX) / piX;
+    // Blackman window centered at 0, spanning -CROSSINGS to +CROSSINGS
+    const windowX = x / CROSSINGS; // 0 to 1 over the right half
+    // But we evaluate the window over the full width. Actually Blackman is typically 0 to 2*pi
+    // Let's use a simpler Hann window for safety, extending from -CROSSINGS to CROSSINGS
+    // Hann(n) = 0.5 * (1 - cos(2*pi*n/N)) where n is 0 to N.
+    // For x from 0 to CROSSINGS, the mapped value is:
+    const hann = 0.5 * (1.0 + Math.cos(Math.PI * x / CROSSINGS)); 
+    sincTable[i] = sinc * hann;
+  }
+}
+
 class TrackProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -55,10 +78,30 @@ class TrackProcessor extends AudioWorkletProcessor {
       const frac = this.playhead - index;
       
       let sample = 0;
-      if (index + 1 < bufferLength) {
-        sample = this.buffer[index] * (1 - frac) + this.buffer[index + 1] * frac;
-      } else {
-        sample = this.buffer[index];
+      
+      // If we are pitching up, we must bandlimit to prevent aliasing.
+      // E.g., if playbackRate is 1.5, we must stretch the sinc function by 1.5
+      // to lowpass the signal below the new Nyquist frequency.
+      const stretch = Math.max(1.0, this.playbackRate);
+      
+      for (let j = -CROSSINGS; j <= CROSSINGS; j++) {
+        const tapIndex = index + j;
+        if (tapIndex >= 0 && tapIndex < bufferLength) {
+          // Distance from the precise playhead
+          const x = (j - frac) / stretch;
+          const absX = Math.abs(x);
+          
+          if (absX < CROSSINGS) {
+            const tableIndex = absX * RESOLUTION;
+            const idx1 = Math.floor(tableIndex);
+            const idx2 = Math.min(idx1 + 1, sincTable.length - 1);
+            const tFrac = tableIndex - idx1;
+            
+            // Linear interpolation of the Sinc table
+            const weight = (sincTable[idx1] * (1 - tFrac) + sincTable[idx2] * tFrac) / stretch;
+            sample += this.buffer[tapIndex] * weight;
+          }
+        }
       }
 
       for (let channel = 0; channel < channelCount; channel++) {
