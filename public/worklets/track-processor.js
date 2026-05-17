@@ -1,8 +1,24 @@
 const CROSSINGS = 16;
-const RESOLUTION = 128;
+const RESOLUTION = 1024;
 const sincTable = new Float32Array(CROSSINGS * RESOLUTION);
 
-// Precompute Windowed Sinc Table (Blackman Window)
+// Zeroth-order modified Bessel function of the first kind
+function besselI0(x) {
+  let sum = 1.0;
+  let term = 1.0;
+  const x2_4 = (x * x) / 4.0;
+  for (let k = 1; k <= 20; k++) {
+    term *= x2_4 / (k * k);
+    sum += term;
+    if (term < 1e-12 * sum) break;
+  }
+  return sum;
+}
+
+const BETA = 9.0; // Kaiser window beta parameter (determines stopband attenuation)
+const I0_BETA = besselI0(BETA);
+
+// Precompute Windowed Sinc Table (Kaiser Window)
 for (let i = 0; i < sincTable.length; i++) {
   const x = i / RESOLUTION;
   if (x === 0) {
@@ -10,21 +26,23 @@ for (let i = 0; i < sincTable.length; i++) {
   } else {
     const piX = Math.PI * x;
     const sinc = Math.sin(piX) / piX;
-    // Blackman window centered at 0, spanning -CROSSINGS to +CROSSINGS
-    const windowX = x / CROSSINGS; // 0 to 1 over the right half
-    // But we evaluate the window over the full width. Actually Blackman is typically 0 to 2*pi
-    // Let's use a simpler Hann window for safety, extending from -CROSSINGS to CROSSINGS
-    // Hann(n) = 0.5 * (1 - cos(2*pi*n/N)) where n is 0 to N.
-    // For x from 0 to CROSSINGS, the mapped value is:
-    const hann = 0.5 * (1.0 + Math.cos(Math.PI * x / CROSSINGS)); 
-    sincTable[i] = sinc * hann;
+    
+    // Kaiser window evaluated from 0 to CROSSINGS
+    // w(x) = I0(beta * sqrt(1 - (x/CROSSINGS)^2)) / I0(beta)
+    const xRatio = x / CROSSINGS;
+    let kaiser = 0;
+    if (xRatio < 1.0) {
+      kaiser = besselI0(BETA * Math.sqrt(1.0 - xRatio * xRatio)) / I0_BETA;
+    }
+    
+    sincTable[i] = sinc * kaiser;
   }
 }
 
 class TrackProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.buffer = null;
+    this.buffers = null;
     this.playhead = 0;
     this.playing = false;
     this.playbackRate = 1.0;
@@ -32,16 +50,19 @@ class TrackProcessor extends AudioWorkletProcessor {
 
     this.port.onmessage = (e) => {
       if (e.data.type === 'LOAD_TRACK') {
-        this.buffer = e.data.buffer;
+        this.buffers = e.data.buffers;
+        if (!this.buffers && e.data.buffer) {
+          this.buffers = [e.data.buffer, e.data.buffer];
+        }
         this.playhead = 0;
-        console.log("TrackProcessor: LOAD_TRACK received. Buffer length:", this.buffer ? this.buffer.length : 'null');
+        console.log("TrackProcessor: LOAD_TRACK received. Buffer length:", this.buffers && this.buffers[0] ? this.buffers[0].length : 'null');
       } else if (e.data.type === 'PLAY') {
         this.playing = true;
         console.log("TrackProcessor: PLAY received.");
       } else if (e.data.type === 'STOP') {
         this.playing = false;
       } else if (e.data.type === 'SEEK') {
-        if (this.buffer) {
+        if (this.buffers) {
           this.playhead = e.data.value * sampleRate;
         }
       } else if (e.data.path === '/faust/pitch') {
@@ -56,7 +77,7 @@ class TrackProcessor extends AudioWorkletProcessor {
     
     const channelCount = output.length;
     
-    if (!this.playing || !this.buffer || channelCount === 0) {
+    if (!this.playing || !this.buffers || channelCount === 0) {
       for (let channel = 0; channel < channelCount; channel++) {
         const outChannel = output[channel];
         for (let i = 0; i < outChannel.length; i++) {
@@ -66,7 +87,7 @@ class TrackProcessor extends AudioWorkletProcessor {
       return true;
     }
 
-    const bufferLength = this.buffer.length;
+    const bufferLength = this.buffers[0].length;
 
     for (let i = 0; i < output[0].length; i++) {
       if (this.playhead >= bufferLength) {
@@ -77,7 +98,8 @@ class TrackProcessor extends AudioWorkletProcessor {
       const index = Math.floor(this.playhead);
       const frac = this.playhead - index;
       
-      let sample = 0;
+      let sampleL = 0;
+      let sampleR = 0;
       
       // If we are pitching up, we must bandlimit to prevent aliasing.
       // E.g., if playbackRate is 1.5, we must stretch the sinc function by 1.5
@@ -99,14 +121,14 @@ class TrackProcessor extends AudioWorkletProcessor {
             
             // Linear interpolation of the Sinc table
             const weight = (sincTable[idx1] * (1 - tFrac) + sincTable[idx2] * tFrac) / stretch;
-            sample += this.buffer[tapIndex] * weight;
+            sampleL += this.buffers[0][tapIndex] * weight;
+            sampleR += this.buffers[1][tapIndex] * weight;
           }
         }
       }
 
-      for (let channel = 0; channel < channelCount; channel++) {
-        output[channel][i] = sample;
-      }
+      if (channelCount > 0) output[0][i] = sampleL;
+      if (channelCount > 1) output[1][i] = sampleR;
 
       this.playhead += this.playbackRate;
     }

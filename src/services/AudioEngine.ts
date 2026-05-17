@@ -109,16 +109,19 @@ export class Deck {
       const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
       
       // 3. Store PCM in memory
-      this.pcmData = audioBuffer.getChannelData(0);
+      const leftChannel = audioBuffer.getChannelData(0);
+      const rightChannel = audioBuffer.numberOfChannels > 1 ? audioBuffer.getChannelData(1) : leftChannel;
+      this.pcmData = leftChannel; // Keep left channel for duration and peaks
       
-      // Explicitly copy the array to guarantee it survives postMessage cloning
-      const clonedPcm = new Float32Array(this.pcmData);
+      // Explicitly copy the arrays to guarantee they survive postMessage cloning
+      const clonedLeft = new Float32Array(leftChannel);
+      const clonedRight = new Float32Array(rightChannel);
 
-      // 4. Send memory pointer / buffer to Worklet
+      // 4. Send memory pointers / buffers to Worklet
       if (this.trackNode) {
         this.trackNode.port.postMessage({
           type: 'LOAD_TRACK',
-          buffer: clonedPcm
+          buffers: [clonedLeft, clonedRight]
         });
       }
 

@@ -12,6 +12,8 @@
         "/usr/share/faust/analyzers.lib",
         "/usr/share/faust/basics.lib",
         "/usr/share/faust/delays.lib",
+        "/usr/share/faust/reverbs.lib",
+        "/usr/share/faust/routes.lib",
         "/usr/share/faust/oscillators.lib",
         "/usr/share/faust/envelopes.lib"
     ],
@@ -22,8 +24,8 @@
         "/usr/share/faust",
         "."
     ],
-    "size": 17106804,
-    "code": "cL+tAVQ8Hw==",
+    "size": 17901996,
+    "code": "OCQrAlQ8Hw==",
     "inputs": 2,
     "outputs": 2,
     "meta": [
@@ -71,6 +73,15 @@
         },
         {
             "filename": "engine"
+        },
+        {
+            "filters.lib/allpass_comb:author": "Julius O. Smith III"
+        },
+        {
+            "filters.lib/allpass_comb:copyright": "Copyright (C) 2003-2019 by Julius O. Smith III <jos@ccrma.stanford.edu>"
+        },
+        {
+            "filters.lib/allpass_comb:license": "MIT-style STK-4.3 license"
         },
         {
             "filters.lib/filterbank:author": "Julius O. Smith III"
@@ -160,22 +171,13 @@
             "filters.lib/peak_eq:license": "MIT-style STK-4.3 license"
         },
         {
-            "filters.lib/resonhp:author": "Julius O. Smith III"
+            "filters.lib/svf:author": "Oleg Nesterov"
         },
         {
-            "filters.lib/resonhp:copyright": "Copyright (C) 2003-2019 by Julius O. Smith III <jos@ccrma.stanford.edu>"
+            "filters.lib/svf:copyright": "Copyright (C) 2020 Oleg Nesterov <oleg@redhat.com>"
         },
         {
-            "filters.lib/resonhp:license": "MIT-style STK-4.3 license"
-        },
-        {
-            "filters.lib/resonlp:author": "Julius O. Smith III"
-        },
-        {
-            "filters.lib/resonlp:copyright": "Copyright (C) 2003-2019 by Julius O. Smith III <jos@ccrma.stanford.edu>"
-        },
-        {
-            "filters.lib/resonlp:license": "MIT-style STK-4.3 license"
+            "filters.lib/svf:license": "MIT-style STK-4.3 license"
         },
         {
             "filters.lib/tf1:author": "Julius O. Smith III"
@@ -259,6 +261,21 @@
             "platform.lib/version": "1.3.0"
         },
         {
+            "reverbs.lib/name": "Faust Reverb Library"
+        },
+        {
+            "reverbs.lib/version": "1.5.1"
+        },
+        {
+            "routes.lib/hadamard:author": "Remy Muller, revised by Romain Michon"
+        },
+        {
+            "routes.lib/name": "Faust Signal Routing Library"
+        },
+        {
+            "routes.lib/version": "1.2.0"
+        },
+        {
             "signals.lib/name": "Faust Signal Routing Library"
         },
         {
@@ -273,10 +290,10 @@
                 {
                     "type": "hslider",
                     "label": "eq_high",
-                    "varname": "fHslider10",
+                    "varname": "fHslider13",
                     "shortname": "eq_high",
                     "address": "/engine/eq_high",
-                    "index": 262512,
+                    "index": 262552,
                     "init": 0,
                     "min": -24,
                     "max": 6,
@@ -285,10 +302,10 @@
                 {
                     "type": "hslider",
                     "label": "eq_low",
-                    "varname": "fHslider8",
+                    "varname": "fHslider11",
                     "shortname": "eq_low",
                     "address": "/engine/eq_low",
-                    "index": 262388,
+                    "index": 262428,
                     "init": 0,
                     "min": -24,
                     "max": 6,
@@ -297,10 +314,10 @@
                 {
                     "type": "hslider",
                     "label": "eq_mid",
-                    "varname": "fHslider9",
+                    "varname": "fHslider12",
                     "shortname": "eq_mid",
                     "address": "/engine/eq_mid",
-                    "index": 262424,
+                    "index": 262464,
                     "init": 0,
                     "min": -24,
                     "max": 6,
@@ -309,10 +326,10 @@
                 {
                     "type": "hslider",
                     "label": "filter",
-                    "varname": "fHslider16",
+                    "varname": "fHslider1",
                     "shortname": "filter",
                     "address": "/engine/filter",
-                    "index": 8685176,
+                    "index": 262184,
                     "init": 0,
                     "min": -100,
                     "max": 100,
@@ -321,10 +338,10 @@
                 {
                     "type": "hslider",
                     "label": "fx_delay_feedback",
-                    "varname": "fHslider5",
+                    "varname": "fHslider8",
                     "shortname": "fx_delay_feedback",
                     "address": "/engine/fx_delay_feedback",
-                    "index": 262256,
+                    "index": 262296,
                     "init": 0.5,
                     "min": 0,
                     "max": 0.95,
@@ -333,10 +350,10 @@
                 {
                     "type": "hslider",
                     "label": "fx_delay_on",
-                    "varname": "fHslider7",
+                    "varname": "fHslider10",
                     "shortname": "fx_delay_on",
                     "address": "/engine/fx_delay_on",
-                    "index": 262300,
+                    "index": 262340,
                     "init": 0,
                     "min": 0,
                     "max": 1,
@@ -345,10 +362,10 @@
                 {
                     "type": "hslider",
                     "label": "fx_delay_time",
-                    "varname": "fHslider6",
+                    "varname": "fHslider9",
                     "shortname": "fx_delay_time",
                     "address": "/engine/fx_delay_time",
-                    "index": 262276,
+                    "index": 262316,
                     "init": 0.5,
                     "min": 0,
                     "max": 2,
@@ -357,10 +374,10 @@
                 {
                     "type": "hslider",
                     "label": "fx_gate_on",
-                    "varname": "fHslider1",
+                    "varname": "fHslider2",
                     "shortname": "fx_gate_on",
                     "address": "/engine/fx_gate_on",
-                    "index": 262180,
+                    "index": 262196,
                     "init": 0,
                     "min": 0,
                     "max": 1,
@@ -369,10 +386,10 @@
                 {
                     "type": "hslider",
                     "label": "fx_gate_rate",
-                    "varname": "fHslider2",
+                    "varname": "fHslider3",
                     "shortname": "fx_gate_rate",
                     "address": "/engine/fx_gate_rate",
-                    "index": 262196,
+                    "index": 262212,
                     "init": 4,
                     "min": 1,
                     "max": 32,
@@ -381,10 +398,10 @@
                 {
                     "type": "hslider",
                     "label": "fx_phaser_on",
-                    "varname": "fHslider4",
+                    "varname": "fHslider5",
                     "shortname": "fx_phaser_on",
                     "address": "/engine/fx_phaser_on",
-                    "index": 262244,
+                    "index": 262260,
                     "init": 0,
                     "min": 0,
                     "max": 1,
@@ -393,10 +410,10 @@
                 {
                     "type": "hslider",
                     "label": "fx_phaser_rate",
-                    "varname": "fHslider13",
+                    "varname": "fHslider14",
                     "shortname": "fx_phaser_rate",
                     "address": "/engine/fx_phaser_rate",
-                    "index": 4489656,
+                    "index": 9512028,
                     "init": 1,
                     "min": 0.1,
                     "max": 10,
@@ -405,10 +422,10 @@
                 {
                     "type": "hslider",
                     "label": "fx_reverb_on",
-                    "varname": "fHslider11",
+                    "varname": "fHslider6",
                     "shortname": "fx_reverb_on",
                     "address": "/engine/fx_reverb_on",
-                    "index": 4489628,
+                    "index": 262272,
                     "init": 0,
                     "min": 0,
                     "max": 1,
@@ -417,10 +434,10 @@
                 {
                     "type": "hslider",
                     "label": "fx_reverb_size",
-                    "varname": "fHslider12",
+                    "varname": "fHslider7",
                     "shortname": "fx_reverb_size",
                     "address": "/engine/fx_reverb_size",
-                    "index": 4489640,
+                    "index": 262284,
                     "init": 0.5,
                     "min": 0,
                     "max": 1,
@@ -429,10 +446,10 @@
                 {
                     "type": "hslider",
                     "label": "fx_roll_bpm",
-                    "varname": "fHslider14",
+                    "varname": "fHslider15",
                     "shortname": "fx_roll_bpm",
                     "address": "/engine/fx_roll_bpm",
-                    "index": 4489724,
+                    "index": 9512104,
                     "init": 120,
                     "min": 30,
                     "max": 300,
@@ -441,10 +458,10 @@
                 {
                     "type": "hslider",
                     "label": "fx_roll_on",
-                    "varname": "fHslider3",
+                    "varname": "fHslider4",
                     "shortname": "fx_roll_on",
                     "address": "/engine/fx_roll_on",
-                    "index": 262224,
+                    "index": 262240,
                     "init": 0,
                     "min": 0,
                     "max": 1,
@@ -453,10 +470,10 @@
                 {
                     "type": "hslider",
                     "label": "fx_siren_on",
-                    "varname": "fHslider15",
+                    "varname": "fHslider16",
                     "shortname": "fx_siren_on",
                     "address": "/engine/fx_siren_on",
-                    "index": 8685136,
+                    "index": 13707536,
                     "init": 0,
                     "min": 0,
                     "max": 1,

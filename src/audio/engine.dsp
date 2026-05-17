@@ -56,14 +56,15 @@ dj_filter(l, r) = l_filt, r_filt
 with {
     c = filter_color / 100.0;
     abs_c = abs(c);
-    freq = 20.0 * (1000.0 ^ abs_c);
-    res = 1.5;
+    hp_freq = 20.0 * (1000.0 ^ abs_c);
+    lp_freq = 20000.0 * (0.001 ^ abs_c);
+    Q = 0.707 + (abs_c * 1.5);
     
-    l_lp = l : fi.resonlp(20000.0 * (0.001 ^ abs_c), res, 1.0);
-    r_lp = r : fi.resonlp(20000.0 * (0.001 ^ abs_c), res, 1.0);
+    l_lp = l : fi.svf.lp(lp_freq, Q);
+    r_lp = r : fi.svf.lp(lp_freq, Q);
     
-    l_hp = l : fi.resonhp(freq, res, 1.0);
-    r_hp = r : fi.resonhp(freq, res, 1.0);
+    l_hp = l : fi.svf.hp(hp_freq, Q);
+    r_hp = r : fi.svf.hp(hp_freq, Q);
     
     lp_mix = min(1.0, max(0.0, -c * 10.0));
     hp_mix = min(1.0, max(0.0, c * 10.0));
@@ -87,17 +88,11 @@ with {
     r_out = r + dl_r(r);
 };
 
-// 2. Reverb (Simple)
-reverb_fx(l, r) = l_out, r_out
+// 2. Reverb
+reverb_fx(l, r) = l, r : re.zita_rev1_stereo(20, 200, 6000, 3.0, 3.0, 48000) : rev_mix
 with {
     wet = fx_reverb_on * fx_reverb_size;
-    
-    // simple FDN-like or just comb filters
-    rev_l = l : + ~ (de.fdelay(ma.SR, ma.SR*0.03) : *(0.8));
-    rev_r = r : + ~ (de.fdelay(ma.SR, ma.SR*0.04) : *(0.8));
-    
-    l_out = l + (rev_l * wet);
-    r_out = r + (rev_r * wet);
+    rev_mix(rev_l, rev_r) = (l * (1.0 - wet)) + (rev_l * wet), (r * (1.0 - wet)) + (rev_r * wet);
 };
 
 // 3. Phaser
@@ -135,10 +130,13 @@ with {
     roll_time = max(1.0, (60.0 / max(1.0, fx_roll_bpm)) * 0.5 * ma.SR);
     captured_time = roll_time : ba.sAndH(trigger);
     
-    // We add a tiny bit of feedback decay (e.g., 0.99) instead of 1.0 
-    // to prevent the loop from blowing up or accumulating DC offset,
-    // and a gentle lowpass to take the edge off loop-boundary clicks.
-    loop_fb = trigger * 0.98;
+    cap_samps = max(1, int(captured_time));
+    counter = (+(1) : %(cap_samps)) ~ *(trigger);
+    dip_samps = max(1, int(0.002 * ma.SR));
+    env_dip = (counter > dip_samps) & (counter < (cap_samps - dip_samps));
+    fast_smoo = si.smooth(ba.tau2pole(0.002));
+    
+    loop_fb = trigger * 0.98 * (env_dip : fast_smoo);
     
     loop_l(x) = x * (1.0 - trigger) : + ~ (de.fdelay(ma.SR*4, captured_time) : *(loop_fb) : fi.lowpass(1, 15000));
     loop_r(x) = x * (1.0 - trigger) : + ~ (de.fdelay(ma.SR*4, captured_time) : *(loop_fb) : fi.lowpass(1, 15000));
@@ -168,4 +166,4 @@ with {
 };
 
 // --- Main Audio Graph ---
-process = eq : delay_fx : reverb_fx : phaser_fx : roll_fx : gate_fx : siren_fx : dj_filter : *(volume), *(volume);
+process = eq : delay_fx : reverb_fx : phaser_fx : roll_fx : gate_fx : siren_fx : dj_filter : *(volume), *(volume) : ma.tanh, ma.tanh;
