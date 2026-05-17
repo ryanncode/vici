@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import * as Tone from 'tone';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { AudioEngine } from './services/AudioEngine';
 import { useAutoMixer } from './hooks/useAutoMixer';
@@ -31,7 +30,7 @@ export default function App() {
     animId = requestAnimationFrame(keepAwake);
 
     let lastTime = performance.now();
-    let lastAudioTime = Tone.context.currentTime;
+    let lastAudioTime = AudioEngine.getInstance().context.currentTime;
     
     const interval = setInterval(() => {
       const now = performance.now();
@@ -41,8 +40,8 @@ export default function App() {
         console.warn(`[PERF] Main thread blocked for ${Math.round(delta)}ms`);
       }
       
-      if (Tone.context.state === 'running') {
-        const audioTime = Tone.context.currentTime;
+      if (AudioEngine.getInstance().context.state === 'running') {
+        const audioTime = AudioEngine.getInstance().context.currentTime;
         // Only log actual drift > 150ms to avoid spam from grouped timers
         if (audioTime !== lastAudioTime) {
           lastAudioTime = audioTime;
@@ -84,7 +83,7 @@ export default function App() {
     const engine = AudioEngine.getInstance();
     if (winningDeck === 'A') {
       const segments = nextTrack.segments || engine.deckA.segments;
-      const defaultOutro = segments.find(s => s.type === 'outro')?.start || (engine.deckA.player.buffer ? Math.max(0, engine.deckA.player.buffer.duration - 15) : 0);
+      const defaultOutro = segments.find(s => s.type === 'outro')?.start || (engine.deckA.loaded ? Math.max(0, engine.deckA.duration - 15) : 0);
       setDeckState('A', { track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || defaultOutro, peaks: nextTrack.waveformPeaks || engine.deckA.peaks, segments });
       setDeckState('B', { isPlaying: false });
       setCrossfade(0);
@@ -95,7 +94,7 @@ export default function App() {
       }
     } else {
       const segments = nextTrack.segments || engine.deckB.segments;
-      const defaultOutro = segments.find(s => s.type === 'outro')?.start || (engine.deckB.player.buffer ? Math.max(0, engine.deckB.player.buffer.duration - 15) : 0);
+      const defaultOutro = segments.find(s => s.type === 'outro')?.start || (engine.deckB.loaded ? Math.max(0, engine.deckB.duration - 15) : 0);
       setDeckState('B', { track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || defaultOutro, peaks: nextTrack.waveformPeaks || engine.deckB.peaks, segments });
       setDeckState('A', { isPlaying: false });
       setCrossfade(1);
@@ -111,11 +110,11 @@ export default function App() {
     const engine = AudioEngine.getInstance();
     if (winningDeck === 'A') {
       const segments = nextTrack.segments || engine.deckA.segments;
-      const defaultOutro = segments.find(s => s.type === 'outro')?.start || (engine.deckA.player.buffer ? Math.max(0, engine.deckA.player.buffer.duration - 15) : 0);
+      const defaultOutro = segments.find(s => s.type === 'outro')?.start || (engine.deckA.loaded ? Math.max(0, engine.deckA.duration - 15) : 0);
       setDeckState('A', { track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || defaultOutro, peaks: nextTrack.waveformPeaks || engine.deckA.peaks, segments });
     } else {
       const segments = nextTrack.segments || engine.deckB.segments;
-      const defaultOutro = segments.find(s => s.type === 'outro')?.start || (engine.deckB.player.buffer ? Math.max(0, engine.deckB.player.buffer.duration - 15) : 0);
+      const defaultOutro = segments.find(s => s.type === 'outro')?.start || (engine.deckB.loaded ? Math.max(0, engine.deckB.duration - 15) : 0);
       setDeckState('B', { track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || defaultOutro, peaks: nextTrack.waveformPeaks || engine.deckB.peaks, segments });
     }
   };

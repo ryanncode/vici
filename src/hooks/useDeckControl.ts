@@ -1,5 +1,4 @@
 import { useRef } from 'react';
-import * as Tone from 'tone';
 import { AudioEngine } from '../services/AudioEngine';
 import { useMixerStore } from '../store/mixerStore';
 import type { Track, TrackMetadata } from '../types/mixer';
@@ -36,9 +35,11 @@ export function useDeckControl(deckId: 'A' | 'B') {
       setDeckState(deckId, { status: 'loading', track: inputTrack as Track });
       const engine = AudioEngine.getInstance();
       
-      if (Tone.context.state !== 'running') {
-        await Tone.start();
+      if (AudioEngine.getInstance().context.state !== 'running') {
+        await AudioEngine.getInstance().context.resume();
       }
+
+      await engine.init();
 
       let track = inputTrack as Track;
       const needsScan = !('isScanned' in inputTrack) || !inputTrack.isScanned;
@@ -76,7 +77,7 @@ export function useDeckControl(deckId: 'A' | 'B') {
       
       if (outro === undefined) {
         const outroSeg = segments.find(s => s.type === 'outro');
-        outro = outroSeg ? outroSeg.start : (deckEngine.player.buffer ? Math.max(0, deckEngine.player.buffer.duration - 15) : 0);
+        outro = outroSeg ? outroSeg.start : (deckEngine.loaded ? Math.max(0, deckEngine.duration - 15) : 0);
       }
       
       setDeckState(deckId, {
@@ -96,11 +97,12 @@ export function useDeckControl(deckId: 'A' | 'B') {
   };
 
   const togglePlayback = async () => {
-    if (Tone.context.state !== 'running') {
-      Tone.setContext(new Tone.Context({ latencyHint: 'playback' }));
-      await Tone.start();
+    if (AudioEngine.getInstance().context.state !== 'running') {
+      
+      await AudioEngine.getInstance().context.resume();
     }
     const engine = AudioEngine.getInstance();
+    await engine.init();
     const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
     const isPlaying = useMixerStore.getState()[deckId === 'A' ? 'deckA' : 'deckB'].isPlaying;
     
@@ -183,7 +185,7 @@ export function useDeckControl(deckId: 'A' | 'B') {
     const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
     const currentMute = useMixerStore.getState()[deckId === 'A' ? 'deckA' : 'deckB'].mute;
     const newMute = !currentMute;
-    deckEngine.player.mute = newMute;
+    deckEngine.mute = newMute;
     setDeckState(deckId, { mute: newMute });
   };
   

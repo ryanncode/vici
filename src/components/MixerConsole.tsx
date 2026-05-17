@@ -2,7 +2,6 @@ import React, { type ChangeEvent } from 'react';
 import { ToggleLeft, ToggleRight } from 'lucide-react';
 import { useMixerStore } from '../store/mixerStore';
 import { AudioEngine } from '../services/AudioEngine';
-import * as Tone from 'tone';
 
 export const MixerConsole = React.memo(function MixerConsole() {
   const deckA = useMixerStore(state => state.deckA);
@@ -22,7 +21,7 @@ export const MixerConsole = React.memo(function MixerConsole() {
     const loop = () => {
       if (crossfadeSliderRef.current) {
         const engine = AudioEngine.getInstance();
-        const valStr = engine.crossfader.fade.value.toFixed(3);
+        const valStr = engine.deckB.channelVolume.toFixed(3);
         if (valStr !== lastVal) {
           crossfadeSliderRef.current.value = valStr;
           lastVal = valStr;
@@ -78,7 +77,7 @@ export const MixerConsole = React.memo(function MixerConsole() {
     const val = parseFloat(e.target.value);
     throttledDSP('crossfade', () => {
       const engine = AudioEngine.getInstance();
-      engine.crossfader.fade.cancelScheduledValues(Tone.now());
+      
       engine.setCrossfadeValue(val);
     });
     

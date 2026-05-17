@@ -1,5 +1,4 @@
 import { useEffect, useRef } from 'react';
-import * as Tone from 'tone';
 import { AudioEngine } from '../services/AudioEngine';
 import { createTrackUrl } from '../services/FileManager';
 import type { Track } from '../types/mixer';
@@ -47,15 +46,15 @@ export function useAutoMixer({ library, isAutomixEnabled, onTransitionStart, onT
       if (deckAState.isPlaying && !deckBState.isPlaying) activeDeck = 'A';
       if (deckBState.isPlaying && !deckAState.isPlaying) activeDeck = 'B';
 
-      if (activeDeck === 'A' && deckAState.track && audio.deckA.player.buffer) {
+      if (activeDeck === 'A' && deckAState.track && audio.deckA.loaded) {
         const current = audio.deckA.getCurrentTime();
-        const duration = audio.deckA.player.buffer.duration;
+        const duration = audio.deckA.duration;
         const outroMarker = deckAState.outroMarker ?? (duration - 15);
         timePastOutro = current - outroMarker;
         fadeDuration = duration - outroMarker;
-      } else if (activeDeck === 'B' && deckBState.track && audio.deckB.player.buffer) {
+      } else if (activeDeck === 'B' && deckBState.track && audio.deckB.loaded) {
         const current = audio.deckB.getCurrentTime();
-        const duration = audio.deckB.player.buffer.duration;
+        const duration = audio.deckB.duration;
         const outroMarker = deckBState.outroMarker ?? (duration - 15);
         timePastOutro = current - outroMarker;
         fadeDuration = duration - outroMarker;
@@ -82,7 +81,8 @@ export function useAutoMixer({ library, isAutomixEnabled, onTransitionStart, onT
         const targetDeckId = activeDeck === 'A' ? 'B' : 'A';
         const targetDeck = targetDeckId === 'A' ? audio.deckA : audio.deckB;
         targetDeck.stop();
-        audio.crossfader.fade.cancelScheduledValues(Tone.now());
+        // audio.crossfader.fade.cancelScheduledValues(Tone.now());
+        audio.setCrossfadeValue(activeDeck === 'A' ? 0 : 1);
         
         onTransitionCancel(targetDeckId);
       }
@@ -144,7 +144,7 @@ export function useAutoMixer({ library, isAutomixEnabled, onTransitionStart, onT
         }
 
         // 1. Load and Sync Tempo
-        if (isFromLibrary || !targetDeck.player.loaded) {
+        if (isFromLibrary || !targetDeck.loaded) {
           await targetDeck.loadTrack(trackUrl);
         }
 
@@ -164,7 +164,8 @@ export function useAutoMixer({ library, isAutomixEnabled, onTransitionStart, onT
 
         // 3. Ramp Crossfader
         const targetValue = currentActive === 'A' ? 1 : 0;
-        audio.crossfader.fade.rampTo(targetValue, fadeDuration);
+        // audio.crossfader.fade.rampTo(targetValue, fadeDuration);
+        audio.setCrossfadeValue(targetValue);
 
         transitionTimeoutRef.current = setTimeout(() => {
           currentDeck.stop();

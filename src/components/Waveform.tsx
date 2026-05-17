@@ -34,7 +34,7 @@ export const Waveform: React.FC<WaveformProps> = React.memo(({
   const getDuration = () => {
     const engine = AudioEngine.getInstance();
     const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
-    return deckEngine.player.buffer?.duration || 0;
+    return deckEngine.duration || 0;
   };
 
   // Draw waveform

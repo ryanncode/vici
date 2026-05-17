@@ -21,7 +21,7 @@ const DeckBpmText = ({ deckId }: { deckId: 'A' | 'B' }) => {
       if (bpmRef.current) {
         const engine = AudioEngine.getInstance();
         const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
-        const bpmStr = (deckEngine.player.loaded && deckEngine.currentBpm > 0) ? deckEngine.currentBpm.toFixed(1) : '---';
+        const bpmStr = (deckEngine.loaded && deckEngine.currentBpm > 0) ? deckEngine.currentBpm.toFixed(1) : '---';
         if (bpmStr !== lastBpmStr) {
           bpmRef.current.textContent = bpmStr;
           lastBpmStr = bpmStr;
@@ -49,7 +49,7 @@ const DeckProgressText = ({ deckId, pitch, isLeft, introMarker, outroMarker, tra
       const engine = AudioEngine.getInstance();
       const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
       const current = deckEngine.getCurrentTime();
-      const duration = deckEngine.player.buffer?.duration || 0;
+      const duration = deckEngine.duration || 0;
       
       if (timeValRef.current) {
         const timeStr = `${formatAdjustedTime(current, pitch)} / ${formatAdjustedTime(duration, pitch)}`;

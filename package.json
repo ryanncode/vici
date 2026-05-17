@@ -10,14 +10,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@grame/faustwasm": "^0.16.1",
     "dexie": "^4.4.2",
     "dexie-react-hooks": "^4.4.0",
     "lucide-react": "^1.16.0",
     "music-metadata": "^11.12.3",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
-    "soundtouchjs": "^0.3.0",
-    "tone": "^15.1.22",
     "zustand": "^5.0.13"
   },
   "devDependencies": {
