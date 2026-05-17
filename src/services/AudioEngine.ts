@@ -14,6 +14,7 @@ export class Deck {
   public peaks: Float32Array | null = null;
   public segments: TrackSegment[] = [];
   public channelVolume: number = 1.0;
+  public crossfadeGain: number = 1.0;
   public trackGainDb: number = 0;
   public currentTime: number = 0;
 
@@ -66,15 +67,20 @@ export class Deck {
       );
 
       // Initialize Faust parameters
-      this.faustNode.setParamValue('/engine/volume', this.channelVolume);
+      this.updateFaustVolume();
       this.faustNode.setParamValue('/engine/pitch', 1.0);
+      this.faustNode.setParamValue('/engine/filter', 0.0);
+      this.faustNode.setParamValue('/engine/eq_low', 0.0);
+      this.faustNode.setParamValue('/engine/eq_mid', 0.0);
+      this.faustNode.setParamValue('/engine/eq_high', 0.0);
 
       // 3. Connect Graph: Track -> Faust -> Output
-      // this.trackNode.connect(this.faustNode);
-      // this.faustNode.connect(this.outputNode);
-
-      // Temp bypass for track Node to guarantee output is active
-      this.trackNode.connect(this.outputNode);
+      if (this.faustNode) {
+        this.trackNode.connect(this.faustNode);
+        this.faustNode.connect(this.outputNode);
+      } else {
+        this.trackNode.connect(this.outputNode);
+      }
 
       // Temp debug bypass
       // this.trackNode.connect(this.outputNode);
@@ -168,7 +174,11 @@ export class Deck {
     }
   }
 
-  public setFilterColor(_value: number): void {}
+  public setFilterColor(value: number): void {
+    if (this.faustNode) {
+      this.faustNode.setParamValue('/engine/filter', value);
+    }
+  }
   public setDelayState(_isOn: boolean): void {}
   public setDelayFeedback(_value: number): void {}
   public setDelayTime(_timeInSeconds: number): void {}
@@ -182,8 +192,17 @@ export class Deck {
 
   public setChannelVolume(linearGain: number): void {
     this.channelVolume = linearGain;
+    this.updateFaustVolume();
+  }
+
+  public setCrossfadeGain(gain: number): void {
+    this.crossfadeGain = gain;
+    this.updateFaustVolume();
+  }
+
+  private updateFaustVolume(): void {
     if (this.faustNode) {
-      this.faustNode.setParamValue('/engine/volume', linearGain);
+      this.faustNode.setParamValue('/engine/volume', this.channelVolume * this.crossfadeGain);
     }
   }
 
@@ -236,11 +255,15 @@ export class AudioEngine {
 
   public setCrossfadeValue(value: number): void {
     // Value range: 0 (Deck A) to 1 (Deck B)
+    // Equal power crossfade
+    const gainA = Math.cos(value * 0.5 * Math.PI);
+    const gainB = Math.cos((1.0 - value) * 0.5 * Math.PI);
+
     if (this.deckA) {
-      this.deckA.setChannelVolume(1.0 - value);
+      this.deckA.setCrossfadeGain(gainA);
     }
     if (this.deckB) {
-      this.deckB.setChannelVolume(value);
+      this.deckB.setCrossfadeGain(gainB);
     }
   }
 }
