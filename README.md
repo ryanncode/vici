@@ -68,4 +68,6 @@ Vici is a high-performance, web-based dual-deck DJ auto-mixing application. Buil
 
 ## License
 
-MIT License.
+This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
+
+If you are interested in using, modifying, or distributing this software under different terms, or require a commercial license for private modifications and closed-source integrations, please contact the developer to discuss alternative licensing arrangements.
