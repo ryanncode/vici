@@ -1,6 +1,10 @@
-const CROSSINGS = 16;
-const RESOLUTION = 1024;
-const sincTable = new Float32Array(CROSSINGS * RESOLUTION);
+const CROSSINGS = 32;
+const RESOLUTION = 512; // Increased for higher fidelity within banks
+const NUM_BANKS = 64;   // 64 discrete pitch steps between 1.0 and 2.0
+const MAX_PITCH = 2.0;
+
+// Flattened 2D Array: [NUM_BANKS][CROSSINGS * RESOLUTION]
+const sincTables = new Float32Array(NUM_BANKS * CROSSINGS * RESOLUTION);
 
 // Zeroth-order modified Bessel function of the first kind
 function besselI0(x) {
@@ -18,24 +22,33 @@ function besselI0(x) {
 const BETA = 9.0; // Kaiser window beta parameter (determines stopband attenuation)
 const I0_BETA = besselI0(BETA);
 
-// Precompute Windowed Sinc Table (Kaiser Window)
-for (let i = 0; i < sincTable.length; i++) {
-  const x = i / RESOLUTION;
-  if (x === 0) {
-    sincTable[i] = 1.0;
-  } else {
-    const piX = Math.PI * x;
-    const sinc = Math.sin(piX) / piX;
+// Precompute Polyphase Filter Banks
+for (let bank = 0; bank < NUM_BANKS; bank++) {
+  // Calculate the stretch factor for this specific bank
+  const stretch = 1.0 + (bank / (NUM_BANKS - 1)) * (MAX_PITCH - 1.0);
+  const bankOffset = bank * CROSSINGS * RESOLUTION;
+
+  for (let i = 0; i < CROSSINGS * RESOLUTION; i++) {
+    const x = i / RESOLUTION;
     
-    // Kaiser window evaluated from 0 to CROSSINGS
-    // w(x) = I0(beta * sqrt(1 - (x/CROSSINGS)^2)) / I0(beta)
-    const xRatio = x / CROSSINGS;
-    let kaiser = 0;
-    if (xRatio < 1.0) {
-      kaiser = besselI0(BETA * Math.sqrt(1.0 - xRatio * xRatio)) / I0_BETA;
+    // We apply the stretch factor directly to the evaluation coordinates
+    const stretchedX = x / stretch;
+    
+    if (stretchedX === 0) {
+      sincTables[bankOffset + i] = 1.0 / stretch;
+    } else {
+      const piX = Math.PI * stretchedX;
+      const sinc = Math.sin(piX) / piX;
+      
+      const xRatio = stretchedX / CROSSINGS;
+      let kaiser = 0;
+      if (xRatio < 1.0) {
+        kaiser = besselI0(BETA * Math.sqrt(1.0 - xRatio * xRatio)) / I0_BETA;
+      }
+      
+      // Store the pre-scaled gain weight to eliminate division in the process loop
+      sincTables[bankOffset + i] = (sinc * kaiser) / stretch;
     }
-    
-    sincTable[i] = sinc * kaiser;
   }
 }
 
@@ -89,6 +102,18 @@ class TrackProcessor extends AudioWorkletProcessor {
 
     const bufferLength = this.buffers[0].length;
 
+    // 1. Determine which filter bank to use based on current playback rate
+    const stretch = Math.max(1.0, this.playbackRate);
+    
+    // Map the stretch factor to the nearest bank index (0 to NUM_BANKS - 1)
+    let bankIndex = Math.round(((stretch - 1.0) / (MAX_PITCH - 1.0)) * (NUM_BANKS - 1));
+    
+    // Clamp the index to prevent out-of-bounds memory access
+    bankIndex = Math.max(0, Math.min(NUM_BANKS - 1, bankIndex));
+    
+    // Set the pointer offset for our 1D Float32Array
+    const bankOffset = bankIndex * CROSSINGS * RESOLUTION;
+
     for (let i = 0; i < output[0].length; i++) {
       if (this.playhead >= bufferLength) {
         this.playing = false;
@@ -101,32 +126,33 @@ class TrackProcessor extends AudioWorkletProcessor {
       let sampleL = 0;
       let sampleR = 0;
       
-      // If we are pitching up, we must bandlimit to prevent aliasing.
-      // E.g., if playbackRate is 1.5, we must stretch the sinc function by 1.5
-      // to lowpass the signal below the new Nyquist frequency.
-      const stretch = Math.max(1.0, this.playbackRate);
-      
       for (let j = -CROSSINGS; j <= CROSSINGS; j++) {
         const tapIndex = index + j;
+        
         if (tapIndex >= 0 && tapIndex < bufferLength) {
-          // Distance from the precise playhead
-          const x = (j - frac) / stretch;
+          // Calculate raw distance without dynamic stretching division
+          const x = j - frac;
           const absX = Math.abs(x);
           
-          if (absX < CROSSINGS) {
+          // Ensure we don't read past the bounds of our pre-stretched window
+          if (absX < (CROSSINGS * stretch)) {
             const tableIndex = absX * RESOLUTION;
             const idx1 = Math.floor(tableIndex);
-            const idx2 = Math.min(idx1 + 1, sincTable.length - 1);
+            const idx2 = Math.min(idx1 + 1, (CROSSINGS * RESOLUTION) - 1);
             const tFrac = tableIndex - idx1;
             
-            // Linear interpolation of the Sinc table
-            const weight = (sincTable[idx1] * (1 - tFrac) + sincTable[idx2] * tFrac) / stretch;
-            sampleL += this.buffers[0][tapIndex] * weight;
-            sampleR += this.buffers[1][tapIndex] * weight;
+            // Linear interpolation between points in the selected polyphase bank
+            const weight1 = sincTables[bankOffset + idx1];
+            const weight2 = sincTables[bankOffset + idx2];
+            const finalWeight = weight1 * (1 - tFrac) + weight2 * tFrac;
+            
+            sampleL += this.buffers[0][tapIndex] * finalWeight;
+            sampleR += this.buffers[1][tapIndex] * finalWeight;
           }
         }
       }
 
+      // Write out the samples
       if (channelCount > 0) output[0][i] = sampleL;
       if (channelCount > 1) output[1][i] = sampleR;
 
@@ -134,7 +160,7 @@ class TrackProcessor extends AudioWorkletProcessor {
     }
 
     this.framesSinceLastReport += output[0].length;
-    if (this.framesSinceLastReport >= sampleRate / 30) { // report 30 times a second
+    if (this.framesSinceLastReport >= sampleRate / 30) {
       this.port.postMessage({ type: 'TIME_UPDATE', value: this.playhead / sampleRate });
       this.framesSinceLastReport = 0;
     }
