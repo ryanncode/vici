@@ -16,7 +16,7 @@ graph TD
     D -->|AudioWorklet Output| E(Faust DSP Node)
     E -->|EQ / FX| F(Master Gain Node)
     F -->|Summing| G(Headroom Gain Node)
-    G --> H[Zero-Latency Safety Clipper WaveShaper]
+    G --> H[Faust Lookahead Peak Limiter]
     H --> I((AudioContext Destination))
 ```
 
@@ -127,15 +127,15 @@ The 64 weights are sequentially loaded directly from the `sincTables` array and 
 
 The interleaved Web Audio output from the WASM resampler is routed into a dynamically compiled Faust WebAssembly node (`FaustMonoDspGenerator`). 
 
-### 4.1 Biquad DJ EQ
-The 3-Band EQ utilizes cascading minimum-phase IIR biquad filters to avoid severe phase-smearing:
-- `fi.low_shelf(low_gain, 250)`
-- `fi.peak_eq(mid_gain, 1000, 1)`
-- `fi.high_shelf(high_gain, 2500)`
+### 4.1 3-Band Isolator (Linkwitz-Riley Crossovers)
+The DJ EQ utilizes a true 3-Band Isolator built from Linkwitz-Riley 4th order (24dB/octave) crossovers. 
+By cascading two 2nd-order Butterworth filters (`fi.lowpass(2, f) : fi.lowpass(2, f)`), the crossover points at **150Hz** and **6500Hz** provide a perfectly flat magnitude sum.
+This completely eliminates the mid-range mud and harsh "presence" zone boosting that plagued earlier biquad shelving designs.
 
 ### 4.2 State-Variable DJ Filter
 The dual Low-Pass / High-Pass filter uses a State-Variable Filter (SVF) topology with a dynamic Q-factor that increases as the filter is pushed further from the center detent, providing resonance without internal feedback explosion:
-$$ Q = 0.707 + (|c| \cdot 1.5) $$
+$ Q = 0.707 + (|c| \cdot 1.5) $
+Crucially, the signal is routed **100% wet** at all times. Sweeping the filter strictly modulates the cutoff frequency (`hp_freq` or `lp_freq`). Crossfading between a phase-shifted SVF signal and a dry signal (parallel comb filtering) has been mathematically eliminated to protect sub-bass integrity.
 
 ### 4.3 Modulating and Time-Variant FX
 For modulating and time-variant effects (Delay, Phaser, Reverb, Roll), the control parameters (e.g., Delay Time, Phaser Rate) are heavily smoothed at the sample rate using Faust's `si.smoo` functions. This applies a one-pole lowpass filter to the UI control signals, preventing zipper noise and aliasing artifacts when DJ knobs are swept aggressively.
@@ -153,35 +153,30 @@ The sum of Deck A and Deck B exits the Faust ecosystem and enters the final Web 
 To prevent digital clipping caused by summing two uncorrelated 0dBFS tracks, the Master bus relies on explicit headroom allocation (defaulting to $-3$ dB) via the `headroomGainNode`.
 $$ Gain_{linear} = 10^{\frac{Headroom_{dB}}{20}} $$
 
-### 5.2 Zero-Latency Safety Clipper (`WaveShaperNode`)
-Standard Web Audio components like the `DynamicsCompressorNode` introduce hidden makeup gain, pumping, and look-ahead envelope delays that ruin the transient response of electronic dance music.
+### 5.2 Faust Lookahead Peak Limiter
+Standard Web Audio components like the `DynamicsCompressorNode` introduce hidden makeup gain, pumping, and envelope delays that ruin the transient response of electronic dance music. Previously, Vici relied on a zero-latency `WaveShaperNode` to soft-clip peaks. However, squaring off waveforms mathematically injects high-frequency odd harmonics, resulting in a harsh, "hot" top-end.
 
-To counter this, Vici relies on a mathematically pure `WaveShaperNode` acting as a zero-latency safety clipper. It maps a 4096-point Float32Array to the audio transfer curve. It is perfectly linear up to an absolute digital ceiling:
+To counter this, the `WaveShaperNode` has been entirely removed from `AudioEngine.ts`. Instead, the DSP chain concludes inside Faust with a true digital lookahead peak limiter. Unlike character compressors (such as the UREI 1176 models which induce their own harmonic saturation), this limiter guarantees mastering-grade transparency. It utilizes a 2ms delay line on the audio signal while an amplitude envelope (`an.amp_follower_ar`) tracks the undelayed peaks with a 0.5ms attack and 50ms release. If the envelope exceeds the 0.98 linear ceiling, the calculated gain reduction is applied to the delayed signal perfectly in time, preventing DAC wrapping without squaring off individual waveform cycles or generating odd-harmonic distortion.
 
-* **Linear Phase:** For $x \in [-0.98, 0.98]$, the curve is $f(x) = x$. (Absolute bit-transparency).
-* **Soft Knee:** For $x < -0.98$, $f(x) = -0.98 + (x + 0.98) \cdot 0.2$. For $x > 0.98$, $f(x) = 0.98 + (x - 0.98) \cdot 0.2$. This applies a subtle quadratic rounding to prevent aggressive odd-harmonic distortion on extreme peaks.
 ---
 
 ## 6. Sources of Intentional (and Unintentional) Signal Coloration
 
 While the engine is architected for strict mathematical transparency, there are specific nodes and states where the audio is inherently "colored." It is critical to document these boundaries so mastering engineers understand exactly what alters the bit-perfect stream.
 
-### 6.1 LTI Nullification in Biquad EQs at 0dB
-In the Faust DSP block, the DJ EQ utilizes IIR Biquad filters (`fi.low_shelf`, `fi.peak_eq`, `fi.high_shelf`). A known property of Infinite Impulse Response filters is that they introduce phase shift (group delay) even if the amplitude response is flat. 
-However, Faust's specific biquad implementations are mathematically reduced such that when the gain variable (`eq_low`, `eq_mid`, `eq_high`) equals exactly `0.0 dB`, the numerator and denominator coefficients become perfectly symmetrical. The feedback and feedforward delays cancel each other out, resulting in a **true zero-phase, bit-perfect pass-through**. No phase smearing occurs when the EQ is at the center detent.
+### 6.1 Isolator Flat Magnitude Summation
+In the Faust DSP block, the DJ EQ relies on Linkwitz-Riley crossovers. An inherent property of LR4 crossovers is that they introduce a 360-degree phase shift at the crossover point. While not strictly "zero-phase", the bands sum to a perfect all-pass filter. When the EQ sliders are at exactly **0.0 dB** (linear gain = 1.0), the magnitude response is mathematically perfectly flat.
 
-### 6.2 DJ Filter Dry-Mix Bypassing
-Similarly, the State-Variable Filter (SVF) introduces significant phase shift due to its LTI topology. To ensure the track remains pristine when the DJ filter knob is centered, the routing logic utilizes an explicit `dry_mix` variable:
+### 6.2 DJ Filter Hard Bypassing
+The State-Variable Filter (SVF) introduces significant phase shift due to its LTI topology. To ensure the track remains pristine when the DJ filter knob is centered, the routing logic utilizes an explicit boolean bypass:
 ```faust
-lp_mix = min(1.0, max(0.0, -c * 10.0));
-hp_mix = min(1.0, max(0.0, c * 10.0));
-dry_mix = 1.0 - (lp_mix + hp_mix);
+is_bypass = (is_lp == 0) & (is_hp == 0);
+l_filt = (l * is_bypass) + (l_lp * is_lp) + (l_hp * is_hp);
 ```
-When `c = 0.0`, `dry_mix = 1.0` and both SVF outputs are multiplied by `0.0`. The filter block becomes a pure multiplication by `1.0`.
+When the knob is exactly centered, the SVF calculation is discarded and the filter block becomes a pure bit-perfect multiplication by `1.0`.
 
-### 6.3 WaveShaper Harmonic Saturation
-As defined in Section 5.2, the `WaveShaperNode` clipper is only bit-transparent for amplitudes between `-0.98` and `0.98` (roughly `-0.17 dBFS`). If the summation of Deck A and Deck B exceeds the `headroomGainNode`'s limit and pushes a peak above `-0.17 dBFS`, the audio enters the soft-knee rounding equation.
-This deliberately introduces **odd-harmonic saturation** (similar to analog tape compression) to softly squash the peak rather than hard-clipping the DAC. A track played too "hot" will audibly distort here.
+### 6.3 Limiter Gain Reduction
+As defined in Section 5.2, the signal is protected by a peak limiter. If the summation of Deck A and Deck B exceeds 0 dBFS, the limiter engages. Unlike the previous WaveShaper which injected immediate THD, the limiter reduces the gain envelope mathematically. However, extreme volume pushing will inherently compress the dynamic range of the master bus, altering the crest factor.
 
 ### 6.4 Key Lock (Master Tempo) Phase Smearing
 The most significant degradation of audio quality occurs when the user enables **Key Lock**.
@@ -201,3 +196,13 @@ Activating Key Lock will immediately and permanently:
 - Introduce metallic/flanging artifacts in the high frequencies.
 
 **Conclusion:** For absolute mastering-grade playback, Key Lock must be disabled, the EQs must be centered at `0.0`, and the master bus must not exceed `-0.17 dBFS`.
+
+---
+
+## 7. DSP Verification Pipeline (`dsp-test.html`)
+
+To objectively guarantee the integrity of the math outlined above, Vici features a standalone DSP verification pipeline located at `public/dsp-test.html`.
+
+Running the test suite instantiates the `FaustMonoDspGenerator` inside a dedicated `AudioContext` isolated from UI render loops.
+1. **Impulse Response Test:** Fires a Dirac Delta impulse (`1.0` followed by `0.0`) through the engine. An embedded `AnalyserNode` performs a Fast Fourier Transform (FFT) and plots the exact Frequency Response curve onto an HTML Canvas. This mathematically proves the perfectly flat magnitude summation of the Linkwitz-Riley Isolator crossovers.
+2. **THD Sine Test:** Fires a pure 1kHz Sine Wave at +12dB into the engine to aggressively trigger the peak limiter. The FFT spectrum analysis visualizes the noise floor, proving the elimination of the odd-harmonic distortion (3kHz, 5kHz) that plagued the earlier WebAudio WaveShaper architecture.

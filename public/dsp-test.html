@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DSP Pipeline Verification</title>
+    <style>
+        body { font-family: sans-serif; background: #1e293b; color: #cbd5e1; padding: 2rem; }
+        button { background: #3b82f6; color: white; border: none; padding: 0.5rem 1rem; border-radius: 0.25rem; cursor: pointer; margin-right: 1rem; }
+        button:hover { background: #2563eb; }
+        canvas { background: #0f172a; border: 1px solid #334155; margin-top: 1rem; border-radius: 0.5rem; display: block; }
+        pre { background: #0f172a; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>DSP Verification</h1>
+    <div style="margin-bottom: 1rem;">
+        <button id="runIR">Run Impulse Response Test</button>
+        <button id="runTHD">Run THD Sine Test (1kHz)</button>
+        <button id="runIMD">Run IMD Test (60Hz + 7kHz)</button>
+        <button id="runSweep">Run Aliasing Sweep (20Hz-24kHz)</button>
+        <button id="runDC">Run DC Offset Test (White Noise)</button>
+    </div>
+    
+    <canvas id="viz" width="800" height="300"></canvas>
+    <pre id="output"></pre>
+
+    <script type="module">
+        import { FaustMonoDspGenerator } from './faust/faustwasm/index.js';
+
+        const canvas = document.getElementById('viz');
+        const ctx2d = canvas.getContext('2d');
+        const output = document.getElementById('output');
+
+        function log(msg) {
+            output.textContent += msg + '\n';
+        }
+
+        function drawCurve(data, sampleRate, title) {
+            ctx2d.clearRect(0, 0, canvas.width, canvas.height);
+            
+            const dbMin = -100;
+            const dbMax = 10;
+            
+            ctx2d.font = '12px sans-serif';
+            ctx2d.fillStyle = '#64748b';
+
+            // Draw Y-axis grid and labels
+            ctx2d.strokeStyle = '#334155';
+            ctx2d.lineWidth = 1;
+            for(let i=10; i>=-100; i-=10) {
+                const y = canvas.height - ((i - dbMin) / (dbMax - dbMin) * canvas.height);
+                ctx2d.beginPath();
+                ctx2d.moveTo(0, y);
+                ctx2d.lineTo(canvas.width, y);
+                ctx2d.stroke();
+                
+                ctx2d.fillText(`${i}dB`, 5, y - 5);
+            }
+
+            // Draw X-axis grid and labels
+            const logMin = Math.log10(20);
+            const logMax = Math.log10(20000);
+            const freqs = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+            
+            for(const f of freqs) {
+                const logX = Math.log10(f);
+                const x = ((logX - logMin) / (logMax - logMin)) * canvas.width;
+                ctx2d.beginPath();
+                ctx2d.moveTo(x, 0);
+                ctx2d.lineTo(x, canvas.height);
+                ctx2d.stroke();
+                
+                const label = f >= 1000 ? `${f/1000}k` : `${f}`;
+                ctx2d.fillText(label, x + 5, canvas.height - 5);
+            }
+
+            ctx2d.beginPath();
+            ctx2d.strokeStyle = '#38bdf8';
+            ctx2d.lineWidth = 2;
+
+            for (let i = 0; i < data.length; i++) {
+                // Logarithmic frequency scale mapping
+                const freq = i * (sampleRate / 2) / data.length;
+                if (freq < 20) continue; // Skip sub 20Hz for plotting
+                
+                const logX = Math.log10(freq);
+                const x = ((logX - logMin) / (logMax - logMin)) * canvas.width;
+                
+                // Map dB to Y axis (-100dB to +10dB)
+                const db = data[i];
+                let y = canvas.height - ((db - dbMin) / (dbMax - dbMin) * canvas.height);
+                
+                // First point needs to use moveTo instead of lineTo
+                if (i === 0 || x <= 0) ctx2d.moveTo(Math.max(0, x), y);
+                else ctx2d.lineTo(x, y);
+            }
+            ctx2d.stroke();
+
+            // Draw title
+            ctx2d.fillStyle = '#fff';
+            ctx2d.font = '14px sans-serif';
+            ctx2d.fillText(title, 45, 20);
+        }
+
+        async function initFaust(audioCtx) {
+            log("Loading Faust DSP...");
+            const dspMeta = await (await fetch("/faust/dsp-meta.json")).json();
+            const dspModule = await WebAssembly.compileStreaming(await fetch("/faust/dsp-module.wasm"));
+            const generator = new FaustMonoDspGenerator();
+            const faustNode = await generator.createNode(audioCtx, "engine", { module: dspModule, json: JSON.stringify(dspMeta), soundfiles: {} }, false);
+            log("Faust DSP Loaded Successfully.");
+            return faustNode;
+        }
+
+        document.getElementById('runIR').onclick = async () => {
+            output.textContent = '';
+            log("--- Running Impulse Response Test ---");
+            
+            const audioCtx = new AudioContext({ sampleRate: 48000 });
+            const faustNode = await initFaust(audioCtx);
+            
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 8192;
+            analyser.smoothingTimeConstant = 0;
+            
+            faustNode.connect(analyser);
+            
+            log("Waiting 500ms for DSP smoothing params to settle...");
+            
+            setTimeout(() => {
+                log("Firing Dirac Impulse...");
+                const impulse = audioCtx.createBuffer(2, 1, audioCtx.sampleRate);
+                impulse.getChannelData(0)[0] = 1.0;
+                impulse.getChannelData(1)[0] = 1.0;
+
+                const source = audioCtx.createBufferSource();
+                source.buffer = impulse;
+                source.connect(faustNode);
+                source.start(0);
+
+                setTimeout(() => {
+                    const data = new Float32Array(analyser.frequencyBinCount);
+                    analyser.getFloatFrequencyData(data);
+                    
+                    let sum = 0;
+                    for(let i=0; i<data.length; i++) {
+                        if (data[i] !== -Infinity) sum += data[i];
+                    }
+                    
+                    if (sum === 0 || sum === -Infinity) {
+                        log("WARNING: Received empty buffer. Make sure volume is up.");
+                    } else {
+                        log("IR Frequency Response Captured! Plotted on canvas.");
+                        drawCurve(data, audioCtx.sampleRate, "Frequency Response (Flat = Perfect Isolator)");
+                    }
+                    
+                    audioCtx.close();
+                }, 50); // wait 50ms for impulse to process and reach analyser
+            }, 500);
+        };
+
+        document.getElementById('runTHD').onclick = async () => {
+            output.textContent = '';
+            log("--- Running THD Test (1kHz Sine) ---");
+            
+            const audioCtx = new AudioContext({ sampleRate: 48000 });
+            const faustNode = await initFaust(audioCtx);
+            
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 8192;
+            analyser.smoothingTimeConstant = 0;
+            
+            faustNode.connect(analyser);
+            
+            // Set massive +12dB gain to push the limiter hard
+            log("Setting master volume to 4.0 (+12dB) to hit limiter...");
+            faustNode.setParamValue('/engine/volume', 4.0);
+            
+            log("Waiting 500ms for params to settle...");
+            
+            setTimeout(() => {
+                log("Firing 1kHz Sine Wave...");
+                const osc = audioCtx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.value = 1000;
+                osc.connect(faustNode);
+                osc.start(0);
+
+                setTimeout(() => {
+                    const data = new Float32Array(analyser.frequencyBinCount);
+                    analyser.getFloatFrequencyData(data);
+                    
+                    log("Spectrum Captured! Look at the canvas for odd harmonics (3k, 5k).");
+                    log("If the limiter is perfectly clean, you should only see a single spike at 1kHz.");
+                    
+                    drawCurve(data, audioCtx.sampleRate, "THD Analysis: 1kHz Sine into Faust Limiter");
+                    
+                    audioCtx.close();
+                }, 200); // Wait 200ms to get a solid sustained wave
+            }, 500);
+        };
+
+        // --- 1. Intermodulation Distortion (IMD) Test ---
+        document.getElementById('runIMD').onclick = async () => {
+            output.textContent = '';
+            log("--- Running IMD Test (60Hz + 7kHz) ---");
+            
+            const audioCtx = new AudioContext({ sampleRate: 48000 });
+            const faustNode = await initFaust(audioCtx);
+            
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 8192;
+            analyser.smoothingTimeConstant = 0;
+            
+            faustNode.connect(analyser);
+            
+            // Push volume to trigger limiting/compression
+            faustNode.setParamValue('/engine/volume', 2.0); 
+            
+            log("Waiting 500ms for params to settle...");
+            
+            setTimeout(() => {
+                log("Firing 60Hz and 7kHz sine waves (4:1 ratio)...");
+                
+                // 60Hz Bass tone
+                const oscLow = audioCtx.createOscillator();
+                const gainLow = audioCtx.createGain();
+                oscLow.type = 'sine';
+                oscLow.frequency.value = 60;
+                gainLow.gain.value = 0.8;
+                oscLow.connect(gainLow).connect(faustNode);
+                
+                // 7kHz Treble tone
+                const oscHigh = audioCtx.createOscillator();
+                const gainHigh = audioCtx.createGain();
+                oscHigh.type = 'sine';
+                oscHigh.frequency.value = 7000;
+                gainHigh.gain.value = 0.2;
+                oscHigh.connect(gainHigh).connect(faustNode);
+
+                oscLow.start(0);
+                oscHigh.start(0);
+
+                setTimeout(() => {
+                    const data = new Float32Array(analyser.frequencyBinCount);
+                    analyser.getFloatFrequencyData(data);
+                    
+                    log("Spectrum Captured!");
+                    log("Look at 7kHz. If you see spikes at 6940Hz or 7060Hz, your engine has Intermodulation Distortion.");
+                    
+                    drawCurve(data, audioCtx.sampleRate, "IMD Analysis: 60Hz + 7kHz");
+                    
+                    audioCtx.close();
+                }, 300); // Wait for sustained waves
+            }, 500);
+        };
+
+        // --- 2. High-Frequency Sweep (Aliasing) Test ---
+        document.getElementById('runSweep').onclick = async () => {
+            output.textContent = '';
+            log("--- Running Aliasing Sweep (20Hz to 24kHz) ---");
+            
+            const audioCtx = new AudioContext({ sampleRate: 48000 });
+            const faustNode = await initFaust(audioCtx);
+            
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 4096;
+            analyser.smoothingTimeConstant = 0.5; // Slight smoothing for visual tracking
+            
+            faustNode.connect(analyser);
+            faustNode.setParamValue('/engine/volume', 2.0); // Push into limiter
+            
+            log("Sweeping frequency... watch the canvas.");
+            log("If spikes detach from the main peak and travel backwards (right to left), your engine is aliasing.");
+            
+            const osc = audioCtx.createOscillator();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(20, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(24000, audioCtx.currentTime + 5);
+            osc.connect(faustNode);
+            osc.start(0);
+
+            let animationId;
+            const startTime = audioCtx.currentTime;
+            
+            function drawFrame() {
+                if (audioCtx.currentTime - startTime < 5.5) {
+                    const data = new Float32Array(analyser.frequencyBinCount);
+                    analyser.getFloatFrequencyData(data);
+                    drawCurve(data, audioCtx.sampleRate, "Aliasing Test: Sine Sweep (Watch for backwards reflections)");
+                    animationId = requestAnimationFrame(drawFrame);
+                } else {
+                    log("Sweep complete.");
+                    audioCtx.close();
+                }
+            }
+            drawFrame();
+        };
+
+        // --- 3. DC Offset (White Noise) Test ---
+        document.getElementById('runDC').onclick = async () => {
+            output.textContent = '';
+            log("--- Running DC Offset Test ---");
+            
+            const audioCtx = new AudioContext({ sampleRate: 48000 });
+            const faustNode = await initFaust(audioCtx);
+            
+            // We need time-domain data, not frequency data
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 32768; // Max size for largest sample pool
+            
+            faustNode.connect(analyser);
+            
+            // Push EQ and Filters to extreme settings to test IIR accumulator stability
+            faustNode.setParamValue('/engine/eq_low', 6.0);
+            faustNode.setParamValue('/engine/filter', 50.0);
+            
+            log("Generating perfect White Noise...");
+            const bufferSize = audioCtx.sampleRate * 2; // 2 seconds
+            const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const outputData = noiseBuffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                outputData[i] = Math.random() * 2 - 1; // Exactly -1.0 to 1.0
+            }
+
+            const whiteNoise = audioCtx.createBufferSource();
+            whiteNoise.buffer = noiseBuffer;
+            whiteNoise.loop = true;
+            whiteNoise.connect(faustNode);
+            whiteNoise.start(0);
+
+            log("Pushing noise through IIR filters for 1 second to let accumulators settle...");
+
+            setTimeout(() => {
+                const timeData = new Float32Array(analyser.fftSize);
+                analyser.getFloatTimeDomainData(timeData); // Note: Time Domain, not Frequency
+                
+                let sum = 0;
+                for (let i = 0; i < timeData.length; i++) {
+                    sum += timeData[i];
+                }
+                const dcOffset = sum / timeData.length;
+                
+                log(`Calculation complete across ${timeData.length} samples.`);
+                log(`Measured DC Offset: ${dcOffset.toFixed(8)}`);
+                
+                if (Math.abs(dcOffset) > 0.001) {
+                    log("WARNING: Significant DC Offset detected. IIR filters are leaking.");
+                    log("Consider adding fi.dcblocker to the end of your Faust graph.");
+                } else {
+                    log("SUCCESS: DC Offset is negligible. Filter accumulators are stable.");
+                }
+                
+                // Clear canvas and write text explicitly
+                ctx2d.clearRect(0, 0, canvas.width, canvas.height);
+                ctx2d.fillStyle = '#fff';
+                ctx2d.font = '16px sans-serif';
+                ctx2d.fillText("DC Offset: " + dcOffset.toFixed(8), 20, canvas.height / 2);
+                
+                audioCtx.close();
+            }, 1000);
+        };
+    </script>
+</body>
+</html>

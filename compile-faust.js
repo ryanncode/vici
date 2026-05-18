@@ -1,5 +1,5 @@
 import fs from 'fs';
-import faustwasm from './node_modules/@grame/faustwasm/dist/cjs/index.js';
+import * as faustwasm from './node_modules/@grame/faustwasm/dist/cjs/index.js';
 
 const { instantiateFaustModuleFromFile, LibFaust, FaustCompiler, FaustMonoDspGenerator } = faustwasm;
 

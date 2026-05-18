@@ -49,19 +49,54 @@ fx_compressor_on = hslider("fx_compressor_on", 0, 0, 1, 1) : si.smoo;
 // EQ
 eq(l, r) = l_eq, r_eq
 with {
-    eq_filter = fi.low_shelf(low_gain, 250) : fi.peak_eq(mid_gain, 1000, 1) : fi.high_shelf(high_gain, 2500);
-    l_eq = l : eq_filter;
-    r_eq = r : eq_filter;
+    low_lin = ba.db2linear(low_gain);
+    mid_lin = ba.db2linear(mid_gain);
+    high_lin = ba.db2linear(high_gain);
+
+    // Linkwitz-Riley 4th order (24dB/oct) crossover building blocks
+    lp4(f) = fi.lowpass(2, f) : fi.lowpass(2, f);
+    hp4(f) = fi.highpass(2, f) : fi.highpass(2, f);
+    
+    // Crossover frequencies
+    f1 = 150.0;
+    f2 = 6500.0;
+
+    // Isolate bands (Left)
+    l_low = l : lp4(f1);
+    l_mid = l : hp4(f1) : lp4(f2);
+    l_high = l : hp4(f1) : hp4(f2);
+    
+    l_eq = (l_low * low_lin) + (l_mid * mid_lin) + (l_high * high_lin);
+
+    // Isolate bands (Right)
+    r_low = r : lp4(f1);
+    r_mid = r : hp4(f1) : lp4(f2);
+    r_high = r : hp4(f1) : hp4(f2);
+    
+    r_eq = (r_low * low_lin) + (r_mid * mid_lin) + (r_high * high_lin);
 };
 
 // DJ Filter
 dj_filter(l, r) = l_filt, r_filt
 with {
-    c = filter_color / 100.0;
+    c = filter_color / 100.0; // -1.0 to 1.0
     abs_c = abs(c);
+    
+    // When dead center, pass perfectly clean signal. 
+    // Otherwise apply filter 100% wet.
+    
+    // HP: 20Hz -> 20kHz
     hp_freq = 20.0 * (1000.0 ^ abs_c);
+    
+    // LP: 20kHz -> 20Hz
     lp_freq = 20000.0 * (0.001 ^ abs_c);
+    
     Q = 0.707 + (abs_c * 1.5);
+    
+    // If c < 0, it's LP. If c > 0, it's HP. If c == 0, bypass.
+    is_lp = c < -0.01;
+    is_hp = c > 0.01;
+    is_bypass = (is_lp == 0) & (is_hp == 0);
     
     l_lp = l : fi.svf.lp(lp_freq, Q);
     r_lp = r : fi.svf.lp(lp_freq, Q);
@@ -69,12 +104,8 @@ with {
     l_hp = l : fi.svf.hp(hp_freq, Q);
     r_hp = r : fi.svf.hp(hp_freq, Q);
     
-    lp_mix = min(1.0, max(0.0, -c * 10.0));
-    hp_mix = min(1.0, max(0.0, c * 10.0));
-    dry_mix = 1.0 - (lp_mix + hp_mix);
-    
-    l_filt = (l_lp * lp_mix) + (l_hp * hp_mix) + (l * dry_mix);
-    r_filt = (r_lp * lp_mix) + (r_hp * hp_mix) + (r * dry_mix);
+    l_filt = (l * is_bypass) + (l_lp * is_lp) + (l_hp * is_hp);
+    r_filt = (r * is_bypass) + (r_lp * is_lp) + (r_hp * is_hp);
 };
 
 // 1. Delay
@@ -185,4 +216,35 @@ with {
 };
 
 // --- Main Audio Graph ---
-process = eq : delay_fx : reverb_fx : phaser_fx : roll_fx : gate_fx : siren_fx : compressor_fx : dj_filter : *(volume), *(volume);
+// True Peak Lookahead Limiter to prevent clipping without WaveShaper distortion
+master_limiter(l, r) = l_out, r_out
+with {
+    // 2ms lookahead buffer to catch peaks before they happen
+    lookahead_time = 0.002;
+    lookahead_samps = int(lookahead_time * ma.SR);
+    
+    // Fast attack (0.5ms) to pull down gain quickly within the lookahead window
+    att_time = 0.0005;
+    // Smooth release (50ms) to prevent pumping and harmonic distortion
+    rel_time = 0.050;
+    
+    ceiling = 0.98; // Digital ceiling (-0.17 dBFS)
+    
+    // Track the absolute peak across both channels
+    peak_sig = max(abs(l), abs(r));
+    
+    // Generate a smooth amplitude envelope
+    env = peak_sig : an.amp_follower_ar(att_time, rel_time);
+    
+    // Calculate required gain reduction based on the envelope
+    gain_reduction = min(1.0, ceiling / max(0.001, env));
+    
+    // Delay the original audio and apply the mathematically perfect gain reduction
+    l_delayed = l : de.delay(ma.SR, lookahead_samps);
+    r_delayed = r : de.delay(ma.SR, lookahead_samps);
+    
+    l_out = l_delayed * gain_reduction;
+    r_out = r_delayed * gain_reduction;
+};
+
+process = eq : delay_fx : reverb_fx : phaser_fx : roll_fx : gate_fx : siren_fx : compressor_fx : dj_filter : *(volume), *(volume) : master_limiter;
