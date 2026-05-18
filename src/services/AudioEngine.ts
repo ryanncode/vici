@@ -52,12 +52,10 @@ export class Deck {
         outputChannelCount: [2]
       });
 
-      // Load WASM processor module
       const basePath = import.meta.env.BASE_URL || '/';
-      const wasmResponse = await fetch(`${basePath}worklets/wasm/audio-processor.wasm`);
-      const wasmBuffer = await wasmResponse.arrayBuffer();
-      
-      this.trackNode.port.postMessage({ type: 'INIT_WASM', wasmBinary: wasmBuffer });
+
+      // Send init message to worklet. The WASM is now bundled via SINGLE_FILE.
+      this.trackNode.port.postMessage({ type: 'INIT_WASM' });
 
       this.trackNode.port.onmessage = (e) => {
         if (e.data.type === 'TIME_UPDATE') {
@@ -69,6 +67,8 @@ export class Deck {
               payload: { deckId: this.id, frame: e.data.frame }
             });
           }
+        } else if (e.data.type === 'WASM_ERROR') {
+          console.error(`Deck ${this.id} WASM Error:`, e.data.error);
         }
       };
 
@@ -382,7 +382,7 @@ export class AudioEngine {
       // Load custom track processor
       const basePath = import.meta.env.BASE_URL || '/';
       try {
-        await this.context.audioWorklet.addModule(`${basePath}worklets/track-processor.js?v=` + Date.now(), { type: 'module' } as any);
+        await this.context.audioWorklet.addModule(`${basePath}worklets/track-processor.bundle.js?v=` + Date.now(), { type: 'module' } as any);
       } catch (e) {
         console.warn("Could not load track processor", e);
       }

@@ -29,9 +29,9 @@ emcc src/wasm/resampler.cpp \
   -lbungee -lpffft \
   -O3 \
   -msimd128 \
-  -mrelaxed-simd \
   -s EXPORT_ES6=1 \
   -s MODULARIZE=1 \
+  -s SINGLE_FILE=1 \
   -s ENVIRONMENT=worklet,worker \
   -s ALLOW_MEMORY_GROWTH=1 \
   -s EXPORTED_FUNCTIONS="['_malloc', '_free']" \
@@ -40,3 +40,7 @@ emcc src/wasm/resampler.cpp \
   -o public/worklets/wasm/audio-processor.js
 
 echo "WASM build complete!"
+
+echo "Bundling AudioWorklet..."
+npx esbuild public/worklets/track-processor.js --bundle --outfile=public/worklets/track-processor.bundle.js --format=esm
+echo "AudioWorklet bundled successfully!"

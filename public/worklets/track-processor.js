@@ -75,12 +75,16 @@ class TrackProcessor extends AudioWorkletProcessor {
 
     this.port.onmessage = async (e) => {
       if (e.data.type === 'INIT_WASM') {
-        const wasmBinary = e.data.wasmBinary;
-        this.wasmModule = await Module({ wasmBinary });
-        // Instantiate our C++ classes
-        this.resampler = new this.wasmModule.Resampler();
-        this.bungee = new this.wasmModule.BungeeStretcher(sampleRate);
-        this.port.postMessage({ type: 'WASM_READY' });
+        try {
+          this.wasmModule = await Module();
+          // Instantiate our C++ classes
+          this.resampler = new this.wasmModule.Resampler();
+          this.bungee = new this.wasmModule.BungeeStretcher(sampleRate);
+          this.port.postMessage({ type: 'WASM_READY' });
+        } catch (err) {
+          console.error("Failed to initialize WASM module in track-processor:", err);
+          this.port.postMessage({ type: 'WASM_ERROR', error: err.message });
+        }
       } else if (e.data.type === 'LOAD_TRACK') {
         this.isStreaming = true;
         this.fullBuffer = null;
