@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "npm run build:wasm && node compile-faust.js && tsc -b && vite build",
     "build:wasm": "bash build-wasm.sh",
     "lint": "eslint .",
     "preview": "vite preview"
