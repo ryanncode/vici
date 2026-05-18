@@ -1,5 +1,5 @@
 import fs from 'fs';
-import * as faustwasm from './node_modules/@grame/faustwasm/dist/cjs/index.js';
+import * as faustwasm from './node_modules/@grame/faustwasm/dist/esm/index.js';
 
 const { instantiateFaustModuleFromFile, LibFaust, FaustCompiler, FaustMonoDspGenerator } = faustwasm;
 
@@ -13,7 +13,7 @@ async function compile() {
     console.log("Compiling engine.dsp...");
     const dspCode = fs.readFileSync('src/audio/engine.dsp', 'utf8');
     
-    await generator.compile(compiler, "engine", dspCode, "");
+    await generator.compile(compiler, "engine", dspCode, "-O");
     const factory = generator.factory;
     
     if (!factory) {
@@ -21,7 +21,10 @@ async function compile() {
         process.exit(1);
     }
     
-    const wasm = factory.wasm;
+    console.log("Keys in factory:", Object.keys(factory));
+    
+    // faustwasm v0.16.1 changed how to get wasm buffer?
+    const wasm = factory.wasm || factory.code;
     const meta = factory.json;
     
     fs.mkdirSync('public/faust', { recursive: true });
@@ -32,5 +35,3 @@ async function compile() {
 }
 
 compile().catch(console.error);
-
-

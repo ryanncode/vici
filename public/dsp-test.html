@@ -128,7 +128,9 @@
             
             setTimeout(() => {
                 log("Firing Dirac Impulse...");
-                const impulse = audioCtx.createBuffer(2, 1, audioCtx.sampleRate);
+                // Keep source alive for 1 second by making buffer 1 second long
+                // so the worklet doesn't go to sleep before the 10ms lookahead delay exits
+                const impulse = audioCtx.createBuffer(2, audioCtx.sampleRate, audioCtx.sampleRate);
                 impulse.getChannelData(0)[0] = 1.0;
                 impulse.getChannelData(1)[0] = 1.0;
 
@@ -154,7 +156,7 @@
                     }
                     
                     audioCtx.close();
-                }, 50); // wait 50ms for impulse to process and reach analyser
+                }, 100); // wait 100ms for impulse to pass the 10ms lookahead and reach analyser
             }, 500);
         };
 
