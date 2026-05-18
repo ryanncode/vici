@@ -81,23 +81,32 @@ export const DeckColumn: React.FC<DeckColumnProps> = ({ deckId }) => {
 
   
   const lastWheelTimeRef = useRef(0);
+  const wheelAccumulatorRef = useRef(0);
 
   const handlePitchWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     e.preventDefault();
+    
     const now = Date.now();
     const timeSinceLast = now - lastWheelTimeRef.current;
     lastWheelTimeRef.current = now;
 
-    let amt = 0.32 * 0.01;
-    if (timeSinceLast < 80) {
-      const speedRatio = 1 - (timeSinceLast / 80);
-      const multiplier = 1 + (speedRatio * speedRatio * speedRatio * 150);
-      amt *= multiplier;
+    let speedMultiplier = 1;
+    if (timeSinceLast < 100) {
+      const speedRatio = 1 - (timeSinceLast / 100);
+      speedMultiplier = 1 + (speedRatio * 10); // Normal acceleration
     }
 
-    let currentValue = state.pitch + (e.deltaY > 0 ? -amt : amt);
-    currentValue = Math.max(0.84, Math.min(1.16, currentValue));
-    setPitch(currentValue);
+    // Accumulate the delta, applying acceleration
+    wheelAccumulatorRef.current += e.deltaY * speedMultiplier;
+
+    // 1 tick = 100 deltaY = 0.1 BPM
+    if (Math.abs(wheelAccumulatorRef.current) >= 50) {
+       const ticks = Math.trunc(wheelAccumulatorRef.current / 50);
+       wheelAccumulatorRef.current -= ticks * 50; 
+       
+       // deltaY > 0 -> scroll down -> decrease pitch
+       nudgePitch(-ticks * 0.1);
+    }
   };
 
   const handlePitchPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {

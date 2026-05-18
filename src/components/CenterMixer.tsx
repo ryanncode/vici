@@ -45,7 +45,7 @@ export const RotaryKnob = ({
     let amt = range * 0.01;
     if (timeSinceLast < 80) {
       const speedRatio = 1 - (timeSinceLast / 80);
-      const multiplier = 1 + (speedRatio * speedRatio * speedRatio * 150);
+      const multiplier = 1 + (speedRatio * speedRatio * speedRatio * 30);
       amt *= multiplier;
     }
 
@@ -179,21 +179,14 @@ export const CenterMixer: React.FC = () => {
   
   const crossfadeSliderRef = useRef<HTMLInputElement>(null);
 
-  const lastStateUpdateRef = useRef<{ [key: string]: number }>({});
-  // dspThrottleRef and dspTimeoutRef removed for latency optimization
-  const throttledDSP = (_key: string, fn: () => void, _delay = 0) => {
+  const throttledDSP = (_key: string, fn: () => void) => {
     // We removed the 32ms throttle to achieve 10-millisecond latency benchmark targeted by Chrome M136
     // Audio Worklet parameters are passed synchronously to avoid React render lifecycle delays.
     fn();
   };
 
   const throttledSetDeckState = (deckId: 'A' | 'B', key: string, value: number) => {
-    const now = Date.now();
-    const lastUpdate = lastStateUpdateRef.current[`${deckId}-${key}`] || 0;
-    if (now - lastUpdate > 200) {
-      useMixerStore.getState().setDeckState(deckId, { [key]: value });
-      lastStateUpdateRef.current[`${deckId}-${key}`] = now;
-    }
+    useMixerStore.getState().setDeckState(deckId, { [key]: value });
   };
 
   const handleGainChange = (deckId: 'A' | 'B', value: number) => {
@@ -221,12 +214,7 @@ export const CenterMixer: React.FC = () => {
       engine.setCrossfadeValue(val);
     });
     
-    const now = Date.now();
-    const lastUpdate = lastStateUpdateRef.current['crossfade'] || 0;
-    if (now - lastUpdate > 200) {
-      useMixerStore.getState().setCrossfade(val);
-      lastStateUpdateRef.current['crossfade'] = now;
-    }
+    useMixerStore.getState().setCrossfade(val);
   };
 
   const handleEqChange = (deckId: 'A' | 'B', band: 'high' | 'mid' | 'low', value: number) => {
@@ -236,12 +224,7 @@ export const CenterMixer: React.FC = () => {
       deckEngine.setEq(band, value);
     });
     
-    const now = Date.now();
-    const lastUpdate = lastStateUpdateRef.current[`${deckId}-eq-${band}`] || 0;
-    if (now - lastUpdate > 200) {
-      useMixerStore.getState().setDeckEq(deckId, { [band]: value });
-      lastStateUpdateRef.current[`${deckId}-eq-${band}`] = now;
-    }
+    useMixerStore.getState().setDeckEq(deckId, { [band]: value });
   };
 
 
@@ -265,7 +248,7 @@ export const CenterMixer: React.FC = () => {
     let amt = 1.5 * 0.01;
     if (timeSinceLast < 80) {
       const speedRatio = 1 - (timeSinceLast / 80);
-      amt *= 1 + (speedRatio * speedRatio * speedRatio * 150);
+      amt *= 1 + (speedRatio * speedRatio * speedRatio * 30);
     }
     let val = currentValue + (e.deltaY > 0 ? -amt : amt);
     val = Math.max(0, Math.min(1.5, val));
@@ -305,7 +288,7 @@ export const CenterMixer: React.FC = () => {
     let amt = 1.0 * 0.01;
     if (timeSinceLast < 80) {
       const speedRatio = 1 - (timeSinceLast / 80);
-      amt *= 1 + (speedRatio * speedRatio * speedRatio * 150);
+      amt *= 1 + (speedRatio * speedRatio * speedRatio * 30);
     }
     // scrolling down (positive deltaY) moves crossfader left? Or right?
     // standard: scroll up -> increases value (moves right). So deltaY < 0 is right.
