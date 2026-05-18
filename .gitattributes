@@ -1,0 +1,11 @@
+# Ignore third-party C/C++/Fortran dependencies from language stats
+src/wasm/bungee/submodules/** linguist-vendored
+
+# Ignore Emscripten SDK if it exists in the repository
+emsdk/** linguist-vendored
+src/wasm/emsdk/** linguist-vendored
+
+# Treat the WebAssembly build artifacts as generated code (to hide them from diffs and stats)
+build/** linguist-generated
+dist/** linguist-generated
+src/wasm/bungee/build/** linguist-generated
