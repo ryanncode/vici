@@ -8,7 +8,14 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       registerType: 'prompt',
+      injectManifest: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,worker.js}'],
+        maximumFileSizeToCacheInBytes: 5000000 // 5MB to accommodate larger chunks
+      },
       includeAssets: ['favicon.svg', 'icons.svg'],
       manifest: {
         name: 'Vici Auto-Mixer',
@@ -29,10 +36,6 @@ export default defineConfig({
             type: 'image/svg+xml'
           }
         ]
-      },
-      workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,worker.js}'],
-        maximumFileSizeToCacheInBytes: 5000000 // 5MB to accommodate larger chunks
       }
     })
   ],
