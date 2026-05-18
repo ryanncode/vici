@@ -124,9 +124,12 @@ $$ W_{normalized}(j) = \frac{W(j)}{Gain_{phase}} $$
 
 This rigorous normalization guarantees that the DC gain of the FIR filter is locked perfectly to **$1.0$ ($0$ dB)** across the entire interpolation cycle. 
 
-### 3.4 SIMD Inner Loop Execution
-In `process_audio_simd`, the costly `std::abs()` scalar distance calculations are bypassed. The fractional phase `frac` determines the integer phases `r1` and `r2`, and the interpolation factor `tFrac`.
-The 64 weights are sequentially loaded directly from the `sincTables` array and processed four-at-a-time using `wasm_f32x4_mul` and `wasm_f32x4_add`.
+### 3.4 WebAssembly Standard SIMD (v128) vs Relaxed SIMD
+The inner loop processes the 64 taps concurrently using SIMD. Previously, the engine utilized WebAssembly Relaxed SIMD to execute a single hardware Fused Multiply-Add instruction (`f32x4.relaxed_madd`). 
+
+However, this was dropped in favor of **Standard SIMD** (`-msimd128`) due to strict deployment constraints on GitHub Pages. Because `SharedArrayBuffer` requires Cross-Origin Embedder Policy (COEP) headers, and GitHub Pages does not allow custom headers, the `AudioWorklet` was violently blocked from performing a network `fetch()` to load the external `.wasm` binary. To bypass this static hosting limitation, the WASM had to be bundled directly into the JavaScript file as a Base64 string (`-s SINGLE_FILE=1`). During the massive architectural churn to resolve these GitHub Pages COEP network blocks, Relaxed SIMD was removed.
+
+Using Standard SIMD forces the compiler to split the mathematical operation into two explicit steps: a vector multiply (`f32x4.mul`) followed immediately by a vector add (`f32x4.add`). Thanks to the out-of-order execution pipelines of modern CPUs, this 2-instruction sequence is perfectly pipelined and the performance loss is practically unnoticeable in the overall audio thread load.
 
 ---
 
@@ -237,3 +240,6 @@ To objectively guarantee the integrity of the math outlined above, Vici features
 Running the test suite instantiates the `FaustMonoDspGenerator` inside a dedicated `AudioContext` isolated from UI render loops.
 1. **Impulse Response Test:** Fires a Dirac Delta impulse (`1.0` followed by `0.0`) through the engine. An embedded `AnalyserNode` performs a Fast Fourier Transform (FFT) and plots the exact Frequency Response curve onto an HTML Canvas. This mathematically proves the perfectly flat magnitude summation of the Linkwitz-Riley Isolator crossovers.
 2. **THD Sine Test:** Fires a pure 1kHz Sine Wave at +12dB into the engine to aggressively trigger the peak limiter. The FFT spectrum analysis visualizes the noise floor, proving the elimination of the odd-harmonic distortion (3kHz, 5kHz) that plagued the earlier WebAudio WaveShaper architecture.
+3. **IMD (Intermodulation Distortion) Test:** Pushes a 60Hz and 7kHz sine wave sum into the limiter to hunt for modulation sidebands.
+4. **Aliasing Sweep:** Sweeps a sine wave from 20Hz to 24kHz to detect high-frequency reflections bouncing off the Nyquist frequency limit.
+5. **DC Offset:** Tracks a massive time-domain buffer of perfect White Noise to ensure internal IIR filter accumulators do not leak DC voltage into the master bus over time.
