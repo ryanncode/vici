@@ -135,10 +135,10 @@ export class Deck {
         const worker = AudioEngine.getInstance().decodingWorker!;
         
         const onMessage = (e: MessageEvent) => {
-          if (e.data.type === 'DECODE_DONE') {
+          if (e.data.type === 'DECODE_DONE' && e.data.deckId === this.id) {
             worker.removeEventListener('message', onMessage);
             resolve(e.data);
-          } else if (e.data.type === 'DECODE_ERROR') {
+          } else if (e.data.type === 'DECODE_ERROR' && e.data.deckId === this.id) {
             worker.removeEventListener('message', onMessage);
             reject(new Error(e.data.error));
           }

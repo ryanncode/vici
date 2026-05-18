@@ -17,6 +17,7 @@ async function initDecoders() {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const streams = new Map<string, any>();
 
 self.onmessage = async (e: MessageEvent) => {
@@ -74,12 +75,13 @@ self.onmessage = async (e: MessageEvent) => {
         streams.set(deckId, streamState);
         pushInterleavedAsyncStateful(deckId);
         
-        self.postMessage({ type: 'DECODE_DONE', peaks, duration, bufferLength, trackSampleRate }, [peaks.buffer]);
+        self.postMessage({ type: 'DECODE_DONE', deckId, peaks, duration, bufferLength, trackSampleRate }, [peaks.buffer]);
       } else {
-        self.postMessage({ type: 'DECODE_DONE', peaks, duration, bufferLength, leftChannel, rightChannel, trackSampleRate }, [peaks.buffer, leftChannel.buffer, rightChannel.buffer]);
+        const deckId = payload.deckId;
+        self.postMessage({ type: 'DECODE_DONE', deckId, peaks, duration, bufferLength, leftChannel, rightChannel, trackSampleRate }, [peaks.buffer, leftChannel.buffer, rightChannel.buffer]);
       }
     } catch (err) {
-      self.postMessage({ type: 'DECODE_ERROR', error: String(err) });
+      self.postMessage({ type: 'DECODE_ERROR', deckId: payload.deckId, error: String(err) });
     }
   } else if (type === 'STREAM_DECODED') {
     const { deckId, buffers, sharedBuffer, capacity } = payload;

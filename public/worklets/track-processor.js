@@ -108,13 +108,13 @@ class TrackProcessor extends AudioWorkletProcessor {
         this.playing = false;
       } else if (e.data.type === 'SEEK') {
         if (this.isStreaming && this.ringBuffer) {
-          this.playhead = e.data.value * sampleRate;
+          this.playhead = e.data.value * this.trackSampleRate;
           this.expectedPullFrame = this.playhead;
           this.port.postMessage({ type: 'SEEK_STREAM', frame: this.playhead });
           if (this.bungee) this.bungee.reset();
           if (this.resampler) this.resampler.reset();
         } else if (!this.isStreaming && this.fullBuffer) {
-          this.playhead = e.data.value * sampleRate;
+          this.playhead = e.data.value * this.trackSampleRate;
           if (this.bungee) this.bungee.reset();
           if (this.resampler) this.resampler.reset();
         }
@@ -283,7 +283,7 @@ class TrackProcessor extends AudioWorkletProcessor {
 
     this.framesSinceLastReport += outputFrames;
     if (this.framesSinceLastReport >= sampleRate / 30) {
-      this.port.postMessage({ type: 'TIME_UPDATE', value: this.playhead / sampleRate });
+      this.port.postMessage({ type: 'TIME_UPDATE', value: this.playhead / this.trackSampleRate });
       this.framesSinceLastReport = 0;
     }
 
