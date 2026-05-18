@@ -14,6 +14,7 @@ export class Deck {
   public peaks: Float32Array | null = null;
   public segments: TrackSegment[] = [];
   public channelVolume: number = 1.0;
+  public channelGain: number = 1.0;
   public crossfadeGain: number = 1.0;
   public trackGainDb: number = 0;
   public currentTime: number = 0;
@@ -243,6 +244,11 @@ export class Deck {
     this.updateFaustVolume();
   }
 
+  public setChannelGain(gain: number): void {
+    this.channelGain = gain;
+    this.updateFaustVolume();
+  }
+
   public setCrossfadeGain(gain: number): void {
     this.crossfadeGain = gain;
     this.updateFaustVolume();
@@ -250,7 +256,7 @@ export class Deck {
 
   private updateFaustVolume(): void {
     if (this.faustNode) {
-      this.faustNode.setParamValue('/engine/volume', this.channelVolume * this.crossfadeGain);
+      this.faustNode.setParamValue('/engine/volume', this.channelVolume * this.channelGain * this.crossfadeGain);
     }
   }
 
@@ -264,14 +270,17 @@ export class AudioEngine {
   public context: AudioContext;
   public deckA!: Deck;
   public deckB!: Deck;
+  public masterGainNode!: GainNode;
   private initialized: boolean = false;
   private initPromise: Promise<void> | null = null;
   public decodingWorker: Worker | null = null;
 
   private constructor() {
     this.context = new (window.AudioContext || (window as any).webkitAudioContext)();
-    this.deckA = new Deck('A', this.context.destination);
-    this.deckB = new Deck('B', this.context.destination);
+    this.masterGainNode = this.context.createGain();
+    this.masterGainNode.connect(this.context.destination);
+    this.deckA = new Deck('A', this.masterGainNode);
+    this.deckB = new Deck('B', this.masterGainNode);
   }
 
   public static getInstance(): AudioEngine {
@@ -308,6 +317,12 @@ export class AudioEngine {
     })();
 
     return this.initPromise;
+  }
+
+  public setMasterVolume(vol: number): void {
+    if (this.masterGainNode) {
+      this.masterGainNode.gain.setTargetAtTime(vol, this.context.currentTime, 0.05);
+    }
   }
 
   public setCrossfadeValue(value: number): void {

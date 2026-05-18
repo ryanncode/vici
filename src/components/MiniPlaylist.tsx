@@ -1,8 +1,12 @@
 import React from 'react';
 import { useLibraryStore } from '../store/libraryStore';
+import { useDeckControl } from '../hooks/useDeckControl';
+import type { Track } from '../types/mixer';
 
 export const MiniPlaylist: React.FC = () => {
   const library = useLibraryStore(state => state.library);
+  const deckA = useDeckControl('A');
+  const deckB = useDeckControl('B');
   
   // Slice to show up to 5 tracks initially
   const tracks = library || [];
@@ -13,6 +17,12 @@ export const MiniPlaylist: React.FC = () => {
     const mins = Math.floor(s / 60);
     const secs = Math.floor(s % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const handleDoubleClick = (track: Track) => {
+    // Basic double click logic: you could alternate, or just load into A by default.
+    // Let's load into A by default for double-click.
+    deckA.loadTrack(track);
   };
 
   return (
@@ -54,7 +64,7 @@ export const MiniPlaylist: React.FC = () => {
       }}>
         {tracks.length > 0 ? (
           tracks.map((track, idx) => (
-            <div key={track.id || idx} className="flex items-center px-4 h-12 bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 rounded-xl hover:border-blue-400 dark:hover:border-blue-500 shadow-sm group transition-all cursor-pointer">
+            <div key={track.id || idx} onDoubleClick={() => handleDoubleClick(track)} className="flex items-center px-4 h-12 bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 rounded-xl hover:border-blue-400 dark:hover:border-blue-500 shadow-sm group transition-all cursor-pointer">
               
               {/* Drag Handle */}
               <div className="w-8 text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300 cursor-grab">
@@ -84,10 +94,14 @@ export const MiniPlaylist: React.FC = () => {
               
               {/* Load Targets (Hover) */}
               <div className="w-24 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button className="px-2 py-1 text-[9px] font-bold bg-slate-100 dark:bg-slate-700 hover:bg-blue-600 text-slate-600 dark:text-slate-300 hover:text-white rounded transition-colors border border-slate-300 dark:border-slate-600 hover:border-blue-500">
+                <button 
+                  onClick={(e) => { e.stopPropagation(); deckA.loadTrack(track); }}
+                  className="px-2 py-1 text-[9px] font-bold bg-slate-100 dark:bg-slate-700 hover:bg-blue-600 text-slate-600 dark:text-slate-300 hover:text-white rounded transition-colors border border-slate-300 dark:border-slate-600 hover:border-blue-500">
                   A
                 </button>
-                <button className="px-2 py-1 text-[9px] font-bold bg-slate-100 dark:bg-slate-700 hover:bg-amber-500 text-slate-600 dark:text-slate-300 hover:text-white rounded transition-colors border border-slate-300 dark:border-slate-600 hover:border-amber-400">
+                <button 
+                  onClick={(e) => { e.stopPropagation(); deckB.loadTrack(track); }}
+                  className="px-2 py-1 text-[9px] font-bold bg-slate-100 dark:bg-slate-700 hover:bg-amber-500 text-slate-600 dark:text-slate-300 hover:text-white rounded transition-colors border border-slate-300 dark:border-slate-600 hover:border-amber-400">
                   B
                 </button>
               </div>

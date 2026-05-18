@@ -6,10 +6,9 @@ import { MiniPlaylist } from './components/MiniPlaylist';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { AudioEngine } from './services/AudioEngine';
 import { useAutoMixer } from './hooks/useAutoMixer';
-// import { Deck } from './components/Deck';
-// import { MixerConsole } from './components/MixerConsole';
-// import { Browser } from './components/Browser';
+import { Browser } from './components/Browser';
 import { useMixerStore } from './store/mixerStore';
+import { RotaryKnob } from './components/CenterMixer';
 import { useLibrary } from './hooks/useLibrary';
 import { useDeckControl } from './hooks/useDeckControl';
 import type { Track } from './types/mixer';
@@ -105,13 +104,14 @@ export default function App() {
   const deckBTrack = useMixerStore(state => state.deckB.track);
   const setDeckState = useMixerStore(state => state.setDeckState);
   const setCrossfade = useMixerStore(state => state.setCrossfade);
+  const masterVolume = useMixerStore(state => state.masterVolume);
   
   const { displayTracks } = useLibrary();
   const deckAControl = useDeckControl('A');
   const deckBControl = useDeckControl('B');
   
-  // const [mixerHeightPct] = useState(65);
-  // const [isLibraryMaximized, setIsLibraryMaximized] = useState(false);
+  const [isLibraryMaximized, setIsLibraryMaximized] = useState(false);
+  const toggleLibraryMaximize = () => setIsLibraryMaximized(!isLibraryMaximized);
 
   const getNextTrack = (currentTrackId?: string): Track | null => {
     if (displayTracks.length === 0) return null;
@@ -242,10 +242,14 @@ export default function App() {
           {/* Center Section (650px) */}
           <div className="w-[650px] flex items-center justify-center gap-6">
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold text-slate-500 uppercase">Master</span>
-              <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-800 border-2 border-slate-400 dark:border-slate-700 flex items-center justify-center">
-                <div className="w-1 h-3 bg-slate-500 dark:bg-white rounded-full -translate-y-1"></div>
-              </div>
+              <span className="text-[9px] font-bold tracking-widest text-slate-500 uppercase pointer-events-none mt-0.5">MASTER</span>
+              <RotaryKnob label="" size="xs" min={0} max={1.5} step={0.01} value={masterVolume} onChange={(v) => {
+                useMixerStore.setState({ masterVolume: v });
+                AudioEngine.getInstance().setMasterVolume(v);
+              }} onDoubleClick={() => {
+                useMixerStore.setState({ masterVolume: 1.0 });
+                AudioEngine.getInstance().setMasterVolume(1.0);
+              }} />
             </div>
             
             <div className="font-mono text-xl font-bold tracking-widest text-slate-800 dark:text-slate-300 px-6 py-1 bg-white dark:bg-slate-950 rounded border-2 border-slate-300 dark:border-slate-800 shadow-inner">
@@ -261,9 +265,21 @@ export default function App() {
               >
                 Auto-Mix
               </button>
-              <button className="px-2 py-1.5 text-xs bg-slate-200 dark:bg-slate-800 border-y-2 border-r-2 border-slate-300 dark:border-slate-700 rounded-r-lg hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors text-slate-600 dark:text-slate-400">
-                ▼ Fade (4 Bars)
-              </button>
+              <div className="relative">
+                <select 
+                  className="appearance-none px-2 py-1.5 text-xs bg-slate-200 dark:bg-slate-800 border-y-2 border-r-2 border-slate-300 dark:border-slate-700 rounded-r-lg hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors text-slate-600 dark:text-slate-400 cursor-pointer outline-none focus:ring-0 w-[110px]"
+                  onChange={(e) => useMixerStore.setState({ automixBars: parseInt(e.target.value) })}
+                  defaultValue="4"
+                >
+                  <option value="0">No Fade</option>
+                  <option value="1">1-2 Bars</option>
+                  <option value="2">2-8 Bars</option>
+                  <option value="4">4-16 Bars</option>
+                  <option value="8">8-32 Bars</option>
+                  <option value="16">16-64 Bars</option>
+                </select>
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500 text-xs">▼</div>
+              </div>
             </div>
           </div>
 
@@ -279,24 +295,35 @@ export default function App() {
             <button className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 flex items-center justify-center border-2 border-slate-300 dark:border-slate-700 transition">
               ⚙
             </button>
-            <button className="px-3 py-1.5 text-xs font-bold uppercase tracking-wider bg-blue-600 hover:bg-blue-500 text-white rounded-lg border-2 border-blue-500 transition-colors shadow-sm">
+            <button 
+              onClick={toggleLibraryMaximize}
+              className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg border-2 transition-colors shadow-sm ${isLibraryMaximized ? 'bg-blue-600 text-white border-blue-500' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700 hover:bg-slate-300 dark:hover:bg-slate-700'}`}
+            >
               Library
             </button>
           </div>
         </div>
 
-        {/* Stacked Waveform Unit (150px) */}
-        <StackedWaveforms />
+        {isLibraryMaximized ? (
+          <div className="flex-1 flex w-full border-2 border-slate-300 dark:border-slate-700 rounded-2xl overflow-hidden shadow-md">
+            <Browser />
+          </div>
+        ) : (
+          <>
+            {/* Stacked Waveform Unit (150px) */}
+            <StackedWaveforms />
 
-        {/* Center Mixer Axis & Decks (520px) */}
-        <div className="h-[520px] shrink-0 flex w-full gap-[10px]">
-          <DeckColumn deckId="A" />
-          <CenterMixer />
-          <DeckColumn deckId="B" />
-        </div>
+            {/* Center Mixer Axis & Decks (520px) */}
+            <div className="h-[520px] shrink-0 flex w-full gap-[10px]">
+              <DeckColumn deckId="A" />
+              <CenterMixer />
+              <DeckColumn deckId="B" />
+            </div>
 
-        {/* Mini-Playlist / Library Snippet (210px) */}
-        <MiniPlaylist />
+            {/* Mini-Playlist / Library Snippet (210px) */}
+            <MiniPlaylist />
+          </>
+        )}
 
       </div>
 

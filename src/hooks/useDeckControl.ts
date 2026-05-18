@@ -124,6 +124,15 @@ export function useDeckControl(deckId: 'A' | 'B') {
     setDeckState(deckId, { volume: value });
   };
   
+  const setGain = (value: number) => {
+    throttledDSP(`gain-${deckId}`, () => {
+      const engine = AudioEngine.getInstance();
+      const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
+      deckEngine.setChannelGain(value);
+    });
+    setDeckState(deckId, { gain: value });
+  };
+  
   const seek = (value: number) => {
     const engine = AudioEngine.getInstance();
     const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
@@ -295,6 +304,7 @@ export function useDeckControl(deckId: 'A' | 'B') {
     loadTrack,
     togglePlayback,
     setVolume,
+    setGain,
     seek,
     setPitch,
     nudgePitch,

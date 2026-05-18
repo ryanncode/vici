@@ -21,6 +21,7 @@ export interface DeckState {
   track: Track | null;
   isPlaying: boolean;
   volume: number;
+  gain: number;
   eq: { high: number; mid: number; low: number };
   filter: number;
   pitch: number;
@@ -54,6 +55,7 @@ const initialDeckState: DeckState = {
   track: null,
   isPlaying: false,
   volume: 1.0,
+  gain: 1.0,
   eq: { high: 0, mid: 0, low: 0 },
   filter: 0,
   pitch: 1.0,
@@ -73,6 +75,8 @@ export interface MixerState {
   crossfade: number;
   masterDeck: 'A' | 'B' | null;
   isAutomixEnabled: boolean;
+  automixBars: number;
+  masterVolume: number;
   
   // Actions
   setDeckState: (deckId: 'A' | 'B', partial: Partial<DeckState>) => void;
@@ -89,6 +93,8 @@ export const useMixerStore = create<MixerState>((set) => ({
   crossfade: 0.5,
   masterDeck: null,
   isAutomixEnabled: false,
+  automixBars: 4,
+  masterVolume: 1.0,
 
   setDeckState: (deckId, partial) =>
     set((state) => ({
