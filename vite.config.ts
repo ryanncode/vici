@@ -13,8 +13,8 @@ export default defineConfig({
       filename: 'sw.ts',
       registerType: 'prompt',
       injectManifest: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,worker.js}'],
-        maximumFileSizeToCacheInBytes: 5000000 // 5MB to accommodate larger chunks
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,worker.js,wasm,json}'],
+        maximumFileSizeToCacheInBytes: 15000000 // 15MB to accommodate larger chunks
       },
       includeAssets: ['favicon.svg', 'icons.svg'],
       manifest: {
@@ -50,6 +50,12 @@ export default defineConfig({
   },
   optimizeDeps: {
     entries: ['index.html'],
-    exclude: ['emsdk']
+    exclude: ['emsdk', '@grame/faustwasm']
+  },
+  build: {
+    minify: false, // Disable minification to prevent Faustwasm dynamic execution errors ('We is not defined')
+    rollupOptions: {
+      external: []
+    }
   }
 })
