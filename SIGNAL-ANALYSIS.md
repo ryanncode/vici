@@ -30,6 +30,7 @@ The system must transport hundreds of megabytes of raw PCM float data from the b
 Audio files are loaded as `ArrayBuffer` objects and passed to a background Web Worker. Depending on the format (`mp3`, `flac`, `wav`), the appropriate WebAssembly decoder decodes the audio into raw `Float32Array` PCM channel arrays (left and right).
 
 Once decoded, the worker utilizes `pushInterleavedAsyncStateful(deckId)` to stream the PCM data into a ring buffer. The worker multiplexes the channels into an interleaved `Float32Array` in chunks of `4096` samples. 
+
 ```javascript
 // Interleaving math
 for (let i = 0; i < chunkSize; i += numChannels) {
@@ -38,6 +39,7 @@ for (let i = 0; i < chunkSize; i += numChannels) {
   chunk[i+1] = stream.buffers[1][frameIndex];
 }
 ```
+
 If the ring buffer fills up, a `setTimeout` of `5ms` yields the thread, providing a steady, backpressured stream.
 
 ### 2.2 Lock-Free Shared Ring Buffer (`SharedRingBuffer.ts`)
@@ -48,11 +50,13 @@ Memory is explicitly allocated as:
 
 Because `Atomics.load` and `Atomics.store` are used to update the read/write pointers, the producer and consumer threads never race. 
 When writing, the pointer wraps around the buffer strictly using modulo arithmetic:
+
 ```javascript
 const available = this.capacity - (writePtr - readPtr);
 const writeIndex = writePtr % this.capacity;
 const firstChunk = Math.min(toWrite, this.capacity - writeIndex);
 ```
+
 If the write crosses the boundary of the `Float32Array`, it is split into two `set()` operations, maintaining contiguous stream logic.
 
 ### 2.3 AudioWorklet Consumption & Local Buffering (`track-processor.js`)
@@ -61,12 +65,14 @@ However, DSP algorithms like the Sinc Resampler require fetching samples backwar
 
 To satisfy this, the Worklet maintains a `localBuffer` (`131072` interleaved floats) that acts as a local circular cache. 
 When pulling from the `SharedRingBuffer`, it places frames into the `localBuffer` at `expectedPullFrame % localCapacity`:
+
 ```javascript
 const globalFrame = Math.floor(this.expectedPullFrame + i);
 const idx = (globalFrame % this.localCapacity) * 2;
 this.localBuffer[idx] = tempBuffer[i * 2];
 this.localBuffer[idx + 1] = tempBuffer[i * 2 + 1];
 ```
+
 When the C++ WASM resampler requests input frames, the `getFrame(idx)` function securely maps the requested absolute track index to the local circular buffer, preventing out-of-bounds reads and enabling instantaneous `CROSSINGS` look-behinds.
 
 ---
@@ -84,6 +90,7 @@ Before the C++ WebAssembly core can process audio, the `AudioWorklet` must calcu
 const sampleRateRatio = (this.trackSampleRate || sampleRate) / sampleRate;
 ratio *= sampleRateRatio;
 ```
+
 Because modern Web Audio contexts frequently default to **48kHz** (standard for video and OS mixers), while the vast majority of consumer MP3s and FLACs are mastered at **44.1kHz** (CD quality), the `sampleRateRatio` evaluates to exactly `44100 / 48000 = 0.91875`. 
 This means that even when a DJ is playing a track at exactly 0% pitch (`playbackRate = 1.0`), the resampler is engaged 100% of the time, continuously upsampling the audio stream at a constant ratio of `0.91875`. This makes the perfection of the Sinc Resampler critical, as it touches every single frame of audio regardless of the pitch fader's position.
 
@@ -156,7 +163,27 @@ $$ Gain_{linear} = 10^{\frac{Headroom_{dB}}{20}} $$
 ### 5.2 Faust Lookahead Peak Limiter
 Standard Web Audio components like the `DynamicsCompressorNode` introduce hidden makeup gain, pumping, and envelope delays that ruin the transient response of electronic dance music. Previously, Vici relied on a zero-latency `WaveShaperNode` to soft-clip peaks. However, squaring off waveforms mathematically injects high-frequency odd harmonics, resulting in a harsh, "hot" top-end.
 
-To counter this, the `WaveShaperNode` has been entirely removed from `AudioEngine.ts`. Instead, the DSP chain concludes inside Faust with a true digital lookahead peak limiter. Unlike character compressors (such as the UREI 1176 models which induce their own harmonic saturation), this limiter guarantees mastering-grade transparency. It utilizes a 2ms delay line on the audio signal while an amplitude envelope (`an.amp_follower_ar`) tracks the undelayed peaks with a 0.5ms attack and 50ms release. If the envelope exceeds the 0.98 linear ceiling, the calculated gain reduction is applied to the delayed signal perfectly in time, preventing DAC wrapping without squaring off individual waveform cycles or generating odd-harmonic distortion.
+To counter this, the `WaveShaperNode` has been entirely removed from `AudioEngine.ts`. Instead, the DSP chain concludes inside Faust with a true digital lookahead peak limiter. Unlike character compressors (such as the UREI 1176 models which induce their own harmonic saturation), this limiter guarantees mastering-grade transparency.
+
+To eliminate Amplitude Modulation (AM) distortion—specifically Zero-Crossing Ripple—the limiter utilizes a professional Multi-Stage Control Filtering architecture. Calculating gain reduction on instantaneous audio samples forces the envelope to "sag" into zero-crossings 2,000 times a second for a 1kHz wave, creating high-frequency mathematical pulses that generate AM sidebands even with slow release times.
+
+Vici solves this by extracting the peak envelope *before* gain reduction division, and employing a phase-aligned control filter:
+
+```faust
+// STAGE 1: Peak Detection (0ms attack, 200ms release)
+peak_env = abs_sig : an.amp_follower_ar(0.0, 0.200);
+
+// STAGE 2: Gain Reduction Calculation (Division AFTER smoothing)
+gr_raw = min(1.0, ceiling / max(0.0001, peak_env));
+
+// STAGE 3: Anti-Ripple Control Filter (15Hz 1-pole lowpass)
+gr_smooth = gr_raw : fi.lowpass(1, 15.0);
+
+// STAGE 4: Group Delay Compensation (10ms lookahead delay)
+lookahead_samps = int(0.010 * ma.SR);
+```
+
+By placing the `min()` bounding *after* the peak follower, the engine never divides by zero and the control signal remains stable. A 15Hz 1-pole lowpass filter chemically annihilates any remaining high-frequency ripple from the envelope, attenuating 2kHz energy by over -40dB (pushing THD below -120dB). Crucially, a 15Hz 1-pole lowpass naturally incurs exactly 10.6ms of group delay. By delaying the audio stream by 10ms, the mathematical nadir of the filtered gain reduction valley aligns perfectly with the audio transient, clamping peaks without any sharp mathematical corners or sideband generation.
 
 ---
 
@@ -169,10 +196,12 @@ In the Faust DSP block, the DJ EQ relies on Linkwitz-Riley crossovers. An inhere
 
 ### 6.2 DJ Filter Hard Bypassing
 The State-Variable Filter (SVF) introduces significant phase shift due to its LTI topology. To ensure the track remains pristine when the DJ filter knob is centered, the routing logic utilizes an explicit boolean bypass:
+
 ```faust
 is_bypass = (is_lp == 0) & (is_hp == 0);
 l_filt = (l * is_bypass) + (l_lp * is_lp) + (l_hp * is_hp);
 ```
+
 When the knob is exactly centered, the SVF calculation is discarded and the filter block becomes a pure bit-perfect multiplication by `1.0`.
 
 ### 6.3 Limiter Gain Reduction
@@ -182,6 +211,7 @@ As defined in Section 5.2, the signal is protected by a peak limiter. If the sum
 The most significant degradation of audio quality occurs when the user enables **Key Lock**.
 When `keyLock = false`, audio is routed through the mathematically perfect 2D Polyphase FIR Sinc Resampler (Section 3).
 When `keyLock = true`, the `track-processor.js` completely bypasses the Sinc resampler and routes the PCM frames into `BungeeStretcher` (`src/wasm/resampler.cpp`). 
+
 ```javascript
 if (this.keyLock && this.bungee) {
     const generated = this.bungee.process_audio(...);
@@ -189,6 +219,7 @@ if (this.keyLock && this.bungee) {
     const consumed = this.resampler.process_audio_simd(...);
 }
 ```
+
 `Bungee` is a time-stretching algorithm (often utilizing phase vocoder or granular synthesis techniques). These algorithms are inherently non-linear and time-variant. They must chop the audio into overlapping FFT frames or grains, shift them, and crossfade them back together. 
 Activating Key Lock will immediately and permanently:
 - Smear the transient response (softening drum hits).

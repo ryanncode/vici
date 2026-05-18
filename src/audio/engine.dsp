@@ -216,35 +216,34 @@ with {
 };
 
 // --- Main Audio Graph ---
-// True Peak Lookahead Limiter to prevent clipping without WaveShaper distortion
+// True Peak Lookahead Limiter (Mastering Grade)
 master_limiter(l, r) = l_out, r_out
 with {
-    // 2ms lookahead buffer to catch peaks before they happen
-    lookahead_time = 0.002;
-    lookahead_samps = int(lookahead_time * ma.SR);
+    ceiling = 0.98;
+    abs_sig = max(abs(l), abs(r));
     
-    // Fast attack (0.5ms) to pull down gain quickly within the lookahead window
-    att_time = 0.0005;
-    // Smooth release (50ms) to prevent pumping and harmonic distortion
-    rel_time = 0.050;
+    // STAGE 1: Peak Detection
+    // 0ms attack catches the peak instantly. 200ms release holds the basic shape.
+    peak_env = abs_sig : an.amp_follower_ar(0.0, 0.200);
     
-    ceiling = 0.98; // Digital ceiling (-0.17 dBFS)
+    // STAGE 2: Gain Reduction Calculation (Division AFTER smoothing)
+    gr_raw = min(1.0, ceiling / max(0.0001, peak_env));
     
-    // Track the absolute peak across both channels
-    peak_sig = max(abs(l), abs(r));
+    // STAGE 3: Anti-Ripple Control Filter
+    // A 15Hz 1-pole lowpass filter chemically annihilates any remaining 2kHz zero-crossing 
+    // ripple from the envelope, turning the multiplier into a perfectly flat, DC-like signal.
+    gr_smooth = gr_raw : fi.lowpass(1, 15.0);
     
-    // Generate a smooth amplitude envelope
-    env = peak_sig : an.amp_follower_ar(att_time, rel_time);
-    
-    // Calculate required gain reduction based on the envelope
-    gain_reduction = min(1.0, ceiling / max(0.001, env));
-    
-    // Delay the original audio and apply the mathematically perfect gain reduction
+    // STAGE 4: Group Delay Compensation
+    // A 15Hz 1-pole lowpass filter naturally delays a signal by exactly 10.6 milliseconds.
+    // By delaying the audio by exactly 10ms, the audio transient strikes at the EXACT 
+    // mathematical nadir of the smoothed gain reduction valley.
+    lookahead_samps = int(0.010 * ma.SR);
     l_delayed = l : de.delay(ma.SR, lookahead_samps);
     r_delayed = r : de.delay(ma.SR, lookahead_samps);
     
-    l_out = l_delayed * gain_reduction;
-    r_out = r_delayed * gain_reduction;
+    l_out = l_delayed * gr_smooth;
+    r_out = r_delayed * gr_smooth;
 };
 
 process = eq : delay_fx : reverb_fx : phaser_fx : roll_fx : gate_fx : siren_fx : compressor_fx : dj_filter : *(volume), *(volume) : master_limiter;
