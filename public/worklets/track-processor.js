@@ -1,56 +1,8 @@
-const CROSSINGS = 32;
-const RESOLUTION = 512; // Increased for higher fidelity within banks
-const NUM_BANKS = 64;   // 64 discrete pitch steps between 1.0 and 2.0
-const MAX_PITCH = 2.0;
-
-// Flattened 2D Array: [NUM_BANKS][CROSSINGS * RESOLUTION]
-const sincTables = new Float32Array(NUM_BANKS * CROSSINGS * RESOLUTION);
-
-// Zeroth-order modified Bessel function of the first kind
-function besselI0(x) {
-  let sum = 1.0;
-  let term = 1.0;
-  const x2_4 = (x * x) / 4.0;
-  for (let k = 1; k <= 20; k++) {
-    term *= x2_4 / (k * k);
-    sum += term;
-    if (term < 1e-12 * sum) break;
-  }
-  return sum;
+if (typeof URL === 'undefined') {
+  globalThis.URL = class URL { constructor() {} };
 }
 
-const BETA = 9.0; // Kaiser window beta parameter (determines stopband attenuation)
-const I0_BETA = besselI0(BETA);
-
-// Precompute Polyphase Filter Banks
-for (let bank = 0; bank < NUM_BANKS; bank++) {
-  // Calculate the stretch factor for this specific bank
-  const stretch = 1.0 + (bank / (NUM_BANKS - 1)) * (MAX_PITCH - 1.0);
-  const bankOffset = bank * CROSSINGS * RESOLUTION;
-
-  for (let i = 0; i < CROSSINGS * RESOLUTION; i++) {
-    const x = i / RESOLUTION;
-    
-    // We apply the stretch factor directly to the evaluation coordinates
-    const stretchedX = x / stretch;
-    
-    if (stretchedX === 0) {
-      sincTables[bankOffset + i] = 1.0 / stretch;
-    } else {
-      const piX = Math.PI * stretchedX;
-      const sinc = Math.sin(piX) / piX;
-      
-      const xRatio = stretchedX / CROSSINGS;
-      let kaiser = 0;
-      if (xRatio < 1.0) {
-        kaiser = besselI0(BETA * Math.sqrt(1.0 - xRatio * xRatio)) / I0_BETA;
-      }
-      
-      // Store the pre-scaled gain weight to eliminate division in the process loop
-      sincTables[bankOffset + i] = (sinc * kaiser) / stretch;
-    }
-  }
-}
+import Module from './wasm/audio-processor.js';
 
 class TrackProcessor extends AudioWorkletProcessor {
   constructor() {
@@ -59,107 +11,175 @@ class TrackProcessor extends AudioWorkletProcessor {
     this.playhead = 0;
     this.playing = false;
     this.playbackRate = 1.0;
+    this.keyLock = false;
     this.framesSinceLastReport = 0;
+    this.wasmModule = null;
+    this.resampler = null;
+    this.bungee = null;
+    
+    this.inputPtr = null;
+    this.outputPtr = null;
+    this.inputCapacity = 0;
+    this.outputCapacity = 0;
 
-    this.port.onmessage = (e) => {
-      if (e.data.type === 'LOAD_TRACK') {
+    this.port.onmessage = async (e) => {
+      if (e.data.type === 'INIT_WASM') {
+        const wasmBinary = e.data.wasmBinary;
+        this.wasmModule = await Module({ wasmBinary });
+        // Instantiate our C++ classes
+        this.resampler = new this.wasmModule.Resampler();
+        this.bungee = new this.wasmModule.BungeeStretcher(sampleRate);
+        this.port.postMessage({ type: 'WASM_READY' });
+      } else if (e.data.type === 'LOAD_TRACK') {
+        // Here we expect full Float32Arrays for the track data
         this.buffers = e.data.buffers;
         if (!this.buffers && e.data.buffer) {
           this.buffers = [e.data.buffer, e.data.buffer];
         }
         this.playhead = 0;
+        if (this.bungee) this.bungee.reset();
         console.log("TrackProcessor: LOAD_TRACK received. Buffer length:", this.buffers && this.buffers[0] ? this.buffers[0].length : 'null');
       } else if (e.data.type === 'PLAY') {
         this.playing = true;
-        console.log("TrackProcessor: PLAY received.");
       } else if (e.data.type === 'STOP') {
         this.playing = false;
       } else if (e.data.type === 'SEEK') {
         if (this.buffers) {
           this.playhead = e.data.value * sampleRate;
+          if (this.bungee) this.bungee.reset();
+          if (this.resampler) this.resampler.reset();
         }
       } else if (e.data.path === '/faust/pitch') {
         this.playbackRate = e.data.value;
+      } else if (e.data.type === 'SET_KEY_LOCK') {
+        this.keyLock = e.data.value;
       }
     };
   }
 
+  ensureWasmBuffers(inputFrames, outputFrames) {
+    if (!this.wasmModule) return false;
+    const requiredInputBytes = inputFrames * 2 * 4; // 2 channels, 4 bytes per float
+    if (!this.inputPtr || this.inputCapacity < requiredInputBytes) {
+      if (this.inputPtr) this.wasmModule._free(this.inputPtr);
+      this.inputPtr = this.wasmModule._malloc(requiredInputBytes);
+      this.inputCapacity = requiredInputBytes;
+    }
+    const requiredOutputBytes = outputFrames * 2 * 4;
+    if (!this.outputPtr || this.outputCapacity < requiredOutputBytes) {
+      if (this.outputPtr) this.wasmModule._free(this.outputPtr);
+      this.outputPtr = this.wasmModule._malloc(requiredOutputBytes);
+      this.outputCapacity = requiredOutputBytes;
+    }
+    return true;
+  }
+
   process(inputs, outputs, parameters) {
     const output = outputs[0];
-    if (!output) return true;
+    if (!output || !this.wasmModule) return true;
     
     const channelCount = output.length;
     
-    if (!this.playing || !this.buffers || channelCount === 0) {
+    if (!this.playing || !this.buffers || channelCount === 0 || (!this.resampler && !this.bungee)) {
       for (let channel = 0; channel < channelCount; channel++) {
-        const outChannel = output[channel];
-        for (let i = 0; i < outChannel.length; i++) {
-          outChannel[i] = 0;
-        }
+        output[channel].fill(0);
       }
       return true;
     }
 
     const bufferLength = this.buffers[0].length;
+    const outputFrames = output[0].length;
+    
+    if (this.playhead >= bufferLength) {
+      this.playing = false;
+      for (let channel = 0; channel < channelCount; channel++) {
+        output[channel].fill(0);
+      }
+      return true;
+    }
 
-    // 1. Determine which filter bank to use based on current playback rate
-    const stretch = Math.max(1.0, this.playbackRate);
+    // Determine how many input frames we need based on playback rate and key lock
+    let ratio = Math.max(0.1, this.playbackRate);
     
-    // Map the stretch factor to the nearest bank index (0 to NUM_BANKS - 1)
-    let bankIndex = Math.round(((stretch - 1.0) / (MAX_PITCH - 1.0)) * (NUM_BANKS - 1));
+    // We fetch a block of frames.
+    // If keyLock is ON, we use Bungee time-stretching (tempo changes without pitch change).
+    // If keyLock is OFF, we use standard Resampler (pitch and tempo change together).
     
-    // Clamp the index to prevent out-of-bounds memory access
-    bankIndex = Math.max(0, Math.min(NUM_BANKS - 1, bankIndex));
-    
-    // Set the pointer offset for our 1D Float32Array
-    const bankOffset = bankIndex * CROSSINGS * RESOLUTION;
+    if (this.keyLock && this.bungee) {
+      // Bungee logic: it stretches audio.
+      // We need to feed it some frames. For simplicity, we feed exactly what we think it might need.
+      // Actually, Bungee Stream handles its own buffering. We push interleaved data and pull interleaved data.
+      // The wrapper in C++ `process_audio` takes input frames and outputs processed frames.
+      // We pass the playhead to get input frames.
+      
+      const inputFramesNeeded = Math.ceil(outputFrames * ratio * 2); // A bit extra just in case
+      let framesAvailable = Math.floor(bufferLength - this.playhead);
+      const inputFrames = Math.min(inputFramesNeeded, framesAvailable);
+      
+      if (inputFrames <= 0) return true;
 
-    for (let i = 0; i < output[0].length; i++) {
-      if (this.playhead >= bufferLength) {
-        this.playing = false;
-        break;
+      this.ensureWasmBuffers(inputFrames, outputFrames);
+
+      const memoryBuffer = this.wasmModule.wasmMemory.buffer;
+      const inputHeap = new Float32Array(memoryBuffer, this.inputPtr, inputFrames * 2);
+      for (let i = 0; i < inputFrames; i++) {
+        const idx = Math.floor(this.playhead) + i;
+        inputHeap[i * 2] = this.buffers[0][idx];
+        inputHeap[i * 2 + 1] = this.buffers[1][idx];
       }
 
-      const index = Math.floor(this.playhead);
-      const frac = this.playhead - index;
+      // pitch is 1.0 (no pitch shift), speed is ratio (tempo stretch)
+      const generated = this.bungee.process_audio(this.inputPtr, inputFrames, this.outputPtr, outputFrames, ratio, 1.0);
+
+      const outputHeap = new Float32Array(memoryBuffer, this.outputPtr, generated * 2);
+      for (let i = 0; i < generated; i++) {
+        if (channelCount > 0) output[0][i] = outputHeap[i * 2];
+        if (channelCount > 1) output[1][i] = outputHeap[i * 2 + 1];
+      }
+      for (let i = generated; i < outputFrames; i++) {
+        if (channelCount > 0) output[0][i] = 0;
+        if (channelCount > 1) output[1][i] = 0;
+      }
+
+      this.playhead += inputFrames; // approximate advance
+    } else if (this.resampler) {
+      // Standard resampler
+      const CROSSINGS = 32;
+      const baseFrames = Math.ceil(outputFrames * ratio);
+      const inputFramesNeeded = baseFrames + CROSSINGS * 2;
+
+      if (this.playhead >= bufferLength) return true;
+
+      this.ensureWasmBuffers(inputFramesNeeded, outputFrames);
+
+      const memoryBuffer = this.wasmModule.wasmMemory.buffer;
+      const inputHeap = new Float32Array(memoryBuffer, this.inputPtr, inputFramesNeeded * 2);
       
-      let sampleL = 0;
-      let sampleR = 0;
-      
-      for (let j = -CROSSINGS; j <= CROSSINGS; j++) {
-        const tapIndex = index + j;
-        
-        if (tapIndex >= 0 && tapIndex < bufferLength) {
-          // Calculate raw distance without dynamic stretching division
-          const x = j - frac;
-          const absX = Math.abs(x);
-          
-          // Ensure we don't read past the bounds of our pre-stretched window
-          if (absX < (CROSSINGS * stretch)) {
-            const tableIndex = absX * RESOLUTION;
-            const idx1 = Math.floor(tableIndex);
-            const idx2 = Math.min(idx1 + 1, (CROSSINGS * RESOLUTION) - 1);
-            const tFrac = tableIndex - idx1;
-            
-            // Linear interpolation between points in the selected polyphase bank
-            const weight1 = sincTables[bankOffset + idx1];
-            const weight2 = sincTables[bankOffset + idx2];
-            const finalWeight = weight1 * (1 - tFrac) + weight2 * tFrac;
-            
-            sampleL += this.buffers[0][tapIndex] * finalWeight;
-            sampleR += this.buffers[1][tapIndex] * finalWeight;
-          }
+      let startIdx = Math.floor(this.playhead) - CROSSINGS;
+
+      for (let i = 0; i < inputFramesNeeded; i++) {
+        const idx = startIdx + i;
+        if (idx >= 0 && idx < bufferLength) {
+          inputHeap[i * 2] = this.buffers[0][idx];
+          inputHeap[i * 2 + 1] = this.buffers[1][idx];
+        } else {
+          inputHeap[i * 2] = 0;
+          inputHeap[i * 2 + 1] = 0;
         }
       }
 
-      // Write out the samples
-      if (channelCount > 0) output[0][i] = sampleL;
-      if (channelCount > 1) output[1][i] = sampleR;
+      const consumed = this.resampler.process_audio_simd(this.inputPtr, inputFramesNeeded, this.outputPtr, outputFrames, ratio);
 
-      this.playhead += this.playbackRate;
+      const outputHeap = new Float32Array(memoryBuffer, this.outputPtr, outputFrames * 2);
+      for (let i = 0; i < outputFrames; i++) {
+        if (channelCount > 0) output[0][i] = outputHeap[i * 2];
+        if (channelCount > 1) output[1][i] = outputHeap[i * 2 + 1];
+      }
+
+      this.playhead = Math.floor(this.playhead) + consumed;
     }
 
-    this.framesSinceLastReport += output[0].length;
+    this.framesSinceLastReport += outputFrames;
     if (this.framesSinceLastReport >= sampleRate / 30) {
       this.port.postMessage({ type: 'TIME_UPDATE', value: this.playhead / sampleRate });
       this.framesSinceLastReport = 0;

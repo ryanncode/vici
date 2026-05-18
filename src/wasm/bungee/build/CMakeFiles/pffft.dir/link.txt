@@ -1,0 +1,2 @@
+/home/gemini/Data/Code/vici/emsdk/upstream/emscripten/emar qc libpffft.a CMakeFiles/pffft.dir/submodules/pffft/pffft.c.o CMakeFiles/pffft.dir/submodules/pffft/fftpack.c.o
+/home/gemini/Data/Code/vici/emsdk/upstream/emscripten/emranlib libpffft.a

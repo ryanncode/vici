@@ -5,15 +5,18 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "npm run build:wasm && tsc -b && vite build",
+    "build:wasm": "bash build-wasm.sh",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
     "@grame/faustwasm": "^0.16.1",
+    "@wasm-audio-decoders/flac": "^0.2.10",
     "dexie": "^4.4.2",
     "dexie-react-hooks": "^4.4.0",
     "lucide-react": "^1.16.0",
+    "mpg123-decoder": "^1.0.3",
     "music-metadata": "^11.12.3",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",

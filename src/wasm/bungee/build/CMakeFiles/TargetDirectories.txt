@@ -1,0 +1,5 @@
+/home/gemini/Data/Code/vici/src/wasm/bungee/build/CMakeFiles/bungee_library.dir
+/home/gemini/Data/Code/vici/src/wasm/bungee/build/CMakeFiles/bungee_executable.dir
+/home/gemini/Data/Code/vici/src/wasm/bungee/build/CMakeFiles/pffft.dir
+/home/gemini/Data/Code/vici/src/wasm/bungee/build/CMakeFiles/edit_cache.dir
+/home/gemini/Data/Code/vici/src/wasm/bungee/build/CMakeFiles/rebuild_cache.dir

@@ -1,0 +1,1 @@
+/home/gemini/Data/Code/vici/emsdk/upstream/emscripten/em++ -O3 -DNDEBUG CMakeFiles/bungee_executable.dir/cmd/main.cpp.o -o bungee.js  libbungee.a libpffft.a 

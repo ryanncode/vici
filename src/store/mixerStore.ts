@@ -24,6 +24,7 @@ export interface DeckState {
   eq: { high: number; mid: number; low: number };
   filter: number;
   pitch: number;
+  keyLock: boolean;
   sync: boolean;
   mute: boolean;
   fx: FxState;
@@ -56,6 +57,7 @@ const initialDeckState: DeckState = {
   eq: { high: 0, mid: 0, low: 0 },
   filter: 0,
   pitch: 1.0,
+  keyLock: false,
   sync: false,
   mute: false,
   fx: { ...initialFxState },

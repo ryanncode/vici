@@ -94,6 +94,7 @@ export const Deck = React.memo(function Deck({ deckId }: { deckId: 'A' | 'B' }) 
     setPitch, 
     nudgePitch, 
     toggleMute, 
+    toggleKeyLock,
     toggleSync, 
     toggleMaster,
     handleFxToggle,
@@ -245,6 +246,10 @@ export const Deck = React.memo(function Deck({ deckId }: { deckId: 'A' | 'B' }) 
             <span className="text-[8px] sm:text-[9px] font-mono text-slate-500 leading-none">{((state.pitch - 1) * 100).toFixed(1)}%</span>
             
             <div className={`flex w-full gap-1 mt-0.5 ${!isLeft ? 'flex-row-reverse' : ''}`}>
+              <button 
+                onClick={toggleKeyLock}
+                className={`flex-1 py-0.5 rounded text-[7px] sm:text-[8px] font-bold transition-colors flex items-center justify-center border ${state.keyLock ? 'bg-fuchsia-600 text-white border-fuchsia-500 shadow-[0_0_8px_rgba(192,38,211,0.5)]' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}
+              >KEY</button>
               <button 
                 onClick={() => toggleSync(!state.sync)}
                 className={`flex-1 py-0.5 rounded text-[7px] sm:text-[8px] font-bold transition-colors flex items-center justify-center border ${state.sync ? 'bg-blue-600 text-white border-blue-500 shadow-[0_0_8px_rgba(37,99,235,0.5)]' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'}`}

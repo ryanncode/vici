@@ -1,0 +1,24 @@
+CMakeFiles/pffft.dir/submodules/pffft/pffft.c.o: \
+  /home/gemini/Data/Code/vici/src/wasm/bungee/submodules/pffft/pffft.c \
+  /home/gemini/Data/Code/vici/src/wasm/bungee/submodules/pffft/pffft.h \
+  /home/gemini/Data/Code/vici/emsdk/upstream/lib/clang/23/include/stddef.h \
+  /home/gemini/Data/Code/vici/emsdk/upstream/emscripten/cache/sysroot/include/stddef.h \
+  /home/gemini/Data/Code/vici/emsdk/upstream/lib/clang/23/include/__stddef_header_macro.h \
+  /home/gemini/Data/Code/vici/emsdk/upstream/lib/clang/23/include/__stddef_ptrdiff_t.h \
+  /home/gemini/Data/Code/vici/emsdk/upstream/lib/clang/23/include/__stddef_size_t.h \
+  /home/gemini/Data/Code/vici/emsdk/upstream/lib/clang/23/include/__stddef_wchar_t.h \
+  /home/gemini/Data/Code/vici/emsdk/upstream/lib/clang/23/include/__stddef_null.h \
+  /home/gemini/Data/Code/vici/emsdk/upstream/lib/clang/23/include/__stddef_max_align_t.h \
+  /home/gemini/Data/Code/vici/emsdk/upstream/lib/clang/23/include/__stddef_offsetof.h \
+  /home/gemini/Data/Code/vici/emsdk/upstream/emscripten/cache/sysroot/include/compat/stdlib.h \
+  /home/gemini/Data/Code/vici/emsdk/upstream/emscripten/cache/sysroot/include/stdlib.h \
+  /home/gemini/Data/Code/vici/emsdk/upstream/emscripten/cache/sysroot/include/features.h \
+  /home/gemini/Data/Code/vici/emsdk/upstream/emscripten/cache/sysroot/include/bits/alltypes.h \
+  /home/gemini/Data/Code/vici/emsdk/upstream/emscripten/cache/sysroot/include/alloca.h \
+  /home/gemini/Data/Code/vici/emsdk/upstream/emscripten/cache/sysroot/include/stdio.h \
+  /home/gemini/Data/Code/vici/emsdk/upstream/emscripten/cache/sysroot/include/wasi/api.h \
+  /home/gemini/Data/Code/vici/emsdk/upstream/lib/clang/23/include/stdint.h \
+  /home/gemini/Data/Code/vici/emsdk/upstream/emscripten/cache/sysroot/include/stdint.h \
+  /home/gemini/Data/Code/vici/emsdk/upstream/emscripten/cache/sysroot/include/compat/math.h \
+  /home/gemini/Data/Code/vici/emsdk/upstream/emscripten/cache/sysroot/include/math.h \
+  /home/gemini/Data/Code/vici/emsdk/upstream/emscripten/cache/sysroot/include/assert.h

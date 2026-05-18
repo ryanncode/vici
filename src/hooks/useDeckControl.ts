@@ -189,6 +189,15 @@ export function useDeckControl(deckId: 'A' | 'B') {
     setDeckState(deckId, { mute: newMute });
   };
   
+  const toggleKeyLock = () => {
+    const engine = AudioEngine.getInstance();
+    const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
+    const currentKeyLock = useMixerStore.getState()[deckId === 'A' ? 'deckA' : 'deckB'].keyLock;
+    const newKeyLock = !currentKeyLock;
+    deckEngine.setKeyLock(newKeyLock);
+    setDeckState(deckId, { keyLock: newKeyLock });
+  };
+  
   const toggleSync = (sync: boolean) => {
     setDeckState(deckId, { sync });
     if (sync) {
@@ -290,6 +299,7 @@ export function useDeckControl(deckId: 'A' | 'B') {
     setPitch,
     nudgePitch,
     toggleMute,
+    toggleKeyLock,
     toggleSync,
     toggleMaster,
     handleFxToggle,

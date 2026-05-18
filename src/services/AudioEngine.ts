@@ -46,6 +46,12 @@ export class Deck {
         outputChannelCount: [2]
       });
 
+      // Load WASM processor module
+      const wasmResponse = await fetch('/worklets/wasm/audio-processor.wasm');
+      const wasmBuffer = await wasmResponse.arrayBuffer();
+      
+      this.trackNode.port.postMessage({ type: 'INIT_WASM', wasmBinary: wasmBuffer });
+
       this.trackNode.port.onmessage = (e) => {
         if (e.data.type === 'TIME_UPDATE') {
           this.currentTime = e.data.value;
@@ -179,6 +185,12 @@ export class Deck {
     }
   }
 
+  public setKeyLock(isLocked: boolean): void {
+    if (this.trackNode) {
+      this.trackNode.port.postMessage({ type: 'SET_KEY_LOCK', value: isLocked });
+    }
+  }
+
   public setEq(band: 'high' | 'mid' | 'low', value: number): void {
     if (this.faustNode) {
       this.faustNode.setParamValue(`/engine/eq_${band}`, value);
@@ -254,6 +266,7 @@ export class AudioEngine {
   public deckB!: Deck;
   private initialized: boolean = false;
   private initPromise: Promise<void> | null = null;
+  public decodingWorker: Worker | null = null;
 
   private constructor() {
     this.context = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -275,9 +288,17 @@ export class AudioEngine {
     this.initPromise = (async () => {
       // Load custom track processor
       try {
-        await this.context.audioWorklet.addModule('/worklets/track-processor.js?v=' + Date.now());
+        await this.context.audioWorklet.addModule('/worklets/track-processor.js?v=' + Date.now(), { type: 'module' } as any);
       } catch (e) {
         console.warn("Could not load track processor", e);
+      }
+
+      // Initialize background decoding worker
+      try {
+        this.decodingWorker = new Worker(new URL('../audio/decoding.worker.ts', import.meta.url), { type: 'module' });
+        this.decodingWorker.postMessage({ type: 'INIT' });
+      } catch (e) {
+        console.warn("Could not load decoding worker", e);
       }
 
       await this.deckA.init(this.context);

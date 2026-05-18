@@ -36,4 +36,13 @@ export default defineConfig({
       }
     })
   ],
+  server: {
+    watch: {
+      ignored: ['**/emsdk/**']
+    }
+  },
+  optimizeDeps: {
+    entries: ['index.html'],
+    exclude: ['emsdk']
+  }
 })
