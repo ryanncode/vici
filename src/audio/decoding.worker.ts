@@ -78,7 +78,9 @@ self.onmessage = async (e: MessageEvent) => {
         self.postMessage({ type: 'DECODE_DONE', deckId, peaks, duration, bufferLength, trackSampleRate }, [peaks.buffer]);
       } else {
         const deckId = payload.deckId;
-        self.postMessage({ type: 'DECODE_DONE', deckId, peaks, duration, bufferLength, leftChannel, rightChannel, trackSampleRate }, [peaks.buffer, leftChannel.buffer, rightChannel.buffer]);
+        const leftClone = leftChannel.slice();
+        const rightClone = rightChannel.slice();
+        self.postMessage({ type: 'DECODE_DONE', deckId, peaks, duration, bufferLength, leftChannel: leftClone, rightChannel: rightClone, trackSampleRate }, [peaks.buffer, leftClone.buffer, rightClone.buffer]);
       }
     } catch (err) {
       self.postMessage({ type: 'DECODE_ERROR', deckId: payload.deckId, error: String(err) });
