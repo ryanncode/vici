@@ -1,10 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { StackedWaveforms } from './components/StackedWaveforms';
+import { CenterMixer } from './components/CenterMixer';
+import { DeckColumn } from './components/DeckColumn';
+import { MiniPlaylist } from './components/MiniPlaylist';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { AudioEngine } from './services/AudioEngine';
 import { useAutoMixer } from './hooks/useAutoMixer';
-import { Deck } from './components/Deck';
-import { MixerConsole } from './components/MixerConsole';
-import { Browser } from './components/Browser';
+// import { Deck } from './components/Deck';
+// import { MixerConsole } from './components/MixerConsole';
+// import { Browser } from './components/Browser';
 import { useMixerStore } from './store/mixerStore';
 import { useLibrary } from './hooks/useLibrary';
 import { useDeckControl } from './hooks/useDeckControl';
@@ -18,6 +22,45 @@ export default function App() {
     onRegistered(r: unknown) { console.log('SW Registered:', r); },
     onRegisterError(error: unknown) { console.error('SW registration error', error); },
   });
+
+  const [scale, setScale] = useState(1);
+  const [isDarkMode, setIsDarkMode] = useState(true);
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDarkMode]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      // Calculate perfect aspect-ratio scale for 1050x950 baseline
+      if (typeof window !== 'undefined') {
+        const winW = window.innerWidth;
+        const winH = window.innerHeight;
+        // Don't scale up on mobile views (<768px width)
+        if (winW < 768) return;
+        
+        // Add a little padding (e.g., 20px) so it doesn't touch the absolute edges
+        const scaleX = (winW - 20) / 1050;
+        const scaleY = (winH - 20) / 950;
+        
+        // Take the smallest scale to maintain aspect ratio without cropping
+        let calculatedScale = Math.min(scaleX, scaleY);
+        
+        // Optionally cap the maximum scale so it doesn't get comically huge on ultrawides
+        calculatedScale = Math.min(calculatedScale, 2.5);
+        
+        setScale(calculatedScale);
+      }
+    };
+    
+    window.addEventListener('resize', handleResize);
+    handleResize();
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Tab High-Performance Mode Enforcer & Silent Latency Monitor
   useEffect(() => {
@@ -67,8 +110,8 @@ export default function App() {
   const deckAControl = useDeckControl('A');
   const deckBControl = useDeckControl('B');
   
-  const [mixerHeightPct] = useState(65);
-  const [isLibraryMaximized, setIsLibraryMaximized] = useState(false);
+  // const [mixerHeightPct] = useState(65);
+  // const [isLibraryMaximized, setIsLibraryMaximized] = useState(false);
 
   const getNextTrack = (currentTrackId?: string): Track | null => {
     if (displayTracks.length === 0) return null;
@@ -159,10 +202,10 @@ export default function App() {
     }
   });
 
-  const toggleLibraryMaximize = () => setIsLibraryMaximized(!isLibraryMaximized);
+  // const toggleLibraryMaximize = () => setIsLibraryMaximized(!isLibraryMaximized);
 
   return (
-    <div className="flex flex-col h-screen bg-slate-950 text-slate-200 font-sans overflow-hidden select-none">
+    <div className="flex flex-col h-screen w-screen bg-slate-200 dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-sans overflow-hidden select-none items-center justify-center relative transition-colors duration-300">
       
       {needRefresh && (
         <div className="absolute top-4 right-4 z-50 bg-blue-600 text-white px-4 py-3 rounded-lg shadow-2xl flex items-center gap-4 border border-blue-400/30">
@@ -174,36 +217,100 @@ export default function App() {
         </div>
       )}
 
-      <div className="flex-1 flex flex-col min-h-0">
-        <div 
-          className="flex-[0_0_auto] min-h-0 p-2 sm:p-4 lg:p-6 2xl:p-8 bg-slate-950 flex justify-center items-start gap-2 sm:gap-4 lg:gap-6 2xl:gap-8 shrink-0 shadow-xl overflow-y-auto overflow-x-auto"
-          style={{ height: isLibraryMaximized ? '0px' : `${mixerHeightPct}%`, display: isLibraryMaximized ? 'none' : 'flex' }}
-        >
-          <Deck deckId="A" />
-          <MixerConsole />
-          <Deck deckId="B" />
-        </div>
-
-        <div 
-          className="h-6 bg-slate-900 border-y border-slate-800 flex items-center justify-between px-4 cursor-row-resize shrink-0 group hover:bg-slate-800 transition-colors"
-          onDoubleClick={toggleLibraryMaximize}
-        >
-          <div className="w-16"></div>
-          <div className="flex gap-1.5 items-center opacity-30 group-hover:opacity-100 transition-opacity">
-            <div className="w-1 h-1 rounded-full bg-slate-400"></div>
-            <div className="w-1 h-1 rounded-full bg-slate-400"></div>
-            <div className="w-1 h-1 rounded-full bg-slate-400"></div>
+      {/* Main Liquid Console Container (responsive scaling via exact transform matrix) */}
+      <div 
+        className="relative origin-center hidden md:flex flex-col shrink-0 gap-[10px]"
+        style={{
+          width: '1050px',
+          height: '950px',
+          transform: `scale(${scale})`
+        }}
+      >
+        {/* Global Header Bar (1050x40px) */}
+        <div className="h-[40px] shrink-0 bg-white/50 dark:bg-slate-800/50 backdrop-blur border-2 border-slate-300 dark:border-slate-700 rounded-t-2xl flex items-center justify-between px-4 shadow-sm">
+          
+          {/* Left Section (200px) */}
+          <div className="w-[200px] flex items-center gap-3">
+            <span className="font-black tracking-widest text-slate-900 dark:text-white italic text-lg">VICI</span>
+            <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-950 px-2 py-1 rounded border border-slate-300 dark:border-slate-800">
+              <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></div>
+              <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 uppercase tracking-wider">CPU</span>
+            </div>
+            <div className="w-2 h-2 rounded-full bg-slate-400 dark:bg-slate-700" title="MIDI Disconnected"></div>
           </div>
-          <button 
-            onClick={(e) => { e.stopPropagation(); toggleLibraryMaximize(); }} 
-            className="text-slate-500 hover:text-blue-400 p-1 flex items-center"
-          >
-            {isLibraryMaximized ? <span className="text-[10px] font-bold tracking-widest uppercase">Restore</span> : <span className="text-[10px] font-bold tracking-widest uppercase">Maximize Library</span>}
-          </button>
+
+          {/* Center Section (650px) */}
+          <div className="w-[650px] flex items-center justify-center gap-6">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold text-slate-500 uppercase">Master</span>
+              <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-800 border-2 border-slate-400 dark:border-slate-700 flex items-center justify-center">
+                <div className="w-1 h-3 bg-slate-500 dark:bg-white rounded-full -translate-y-1"></div>
+              </div>
+            </div>
+            
+            <div className="font-mono text-xl font-bold tracking-widest text-slate-800 dark:text-slate-300 px-6 py-1 bg-white dark:bg-slate-950 rounded border-2 border-slate-300 dark:border-slate-800 shadow-inner">
+              {new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' })}
+            </div>
+
+            <div className="flex items-center gap-0 group">
+              <button 
+                onClick={() => useMixerStore.setState({ isAutomixEnabled: !isAutomixEnabled })}
+                className={`px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-l-lg transition-colors border-2 ${
+                  isAutomixEnabled ? 'bg-amber-500 text-black border-amber-500' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700 hover:bg-slate-300 dark:hover:bg-slate-700'
+                }`}
+              >
+                Auto-Mix
+              </button>
+              <button className="px-2 py-1.5 text-xs bg-slate-200 dark:bg-slate-800 border-y-2 border-r-2 border-slate-300 dark:border-slate-700 rounded-r-lg hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors text-slate-600 dark:text-slate-400">
+                ▼ Fade (4 Bars)
+              </button>
+            </div>
+          </div>
+
+          {/* Right Section (200px) */}
+          <div className="w-[200px] flex items-center justify-end gap-3">
+            <button 
+              onClick={() => setIsDarkMode(!isDarkMode)}
+              className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 flex items-center justify-center border-2 border-slate-300 dark:border-slate-700 transition"
+              title="Toggle Theme"
+            >
+              {isDarkMode ? '☀' : '🌙'}
+            </button>
+            <button className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 flex items-center justify-center border-2 border-slate-300 dark:border-slate-700 transition">
+              ⚙
+            </button>
+            <button className="px-3 py-1.5 text-xs font-bold uppercase tracking-wider bg-blue-600 hover:bg-blue-500 text-white rounded-lg border-2 border-blue-500 transition-colors shadow-sm">
+              Library
+            </button>
+          </div>
         </div>
 
-        <Browser />
+        {/* Stacked Waveform Unit (150px) */}
+        <StackedWaveforms />
+
+        {/* Center Mixer Axis & Decks (520px) */}
+        <div className="h-[520px] shrink-0 flex w-full gap-[10px]">
+          <DeckColumn deckId="A" />
+          <CenterMixer />
+          <DeckColumn deckId="B" />
+        </div>
+
+        {/* Mini-Playlist / Library Snippet (210px) */}
+        <MiniPlaylist />
+
       </div>
+
+      {/* Mobile/Tablet Placeholder View (< 768px) */}
+      <div className="md:hidden flex flex-col items-center justify-center w-full h-full bg-slate-900 text-slate-400 p-8 text-center">
+        <div className="w-16 h-16 mb-6 rounded-full bg-slate-800 flex items-center justify-center shadow-inner border border-slate-700">
+          <span className="text-2xl">📱</span>
+        </div>
+        <h2 className="text-xl font-bold text-white mb-2 tracking-widest uppercase">Mobile View Pending</h2>
+        <p className="text-sm max-w-sm">
+          The specialized touch-first portrait and landscape interfaces for tablets and phones are currently in development. Please view on a desktop or larger screen.
+        </p>
+      </div>
+
     </div>
   );
 }
