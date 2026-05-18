@@ -5,6 +5,21 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Vici</title>
+    <script>
+      // Enforce Cross-Origin Isolation for SharedArrayBuffer
+      if (window.isSecureContext && typeof SharedArrayBuffer === 'undefined') {
+        if (!sessionStorage.getItem('coiReloaded')) {
+          sessionStorage.setItem('coiReloaded', 'true');
+          navigator.serviceWorker.ready.then(() => {
+            window.location.reload();
+          });
+        } else {
+          console.error("SharedArrayBuffer is still undefined after reload. Cross-Origin Isolation failed.");
+        }
+      } else {
+        sessionStorage.removeItem('coiReloaded');
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
