@@ -5,6 +5,8 @@ import type { FileSystemFileHandle } from './FileManager';
 export interface WaveformAnalysisResult {
   peaks: Float32Array;
   segments: import('../types/mixer').TrackSegment[];
+  mfccs?: Float32Array;
+  cens?: Float32Array;
 }
 
 interface ScanJob {
@@ -42,7 +44,7 @@ class MetadataScanner {
   }
 
   private async handleWorkerMessage(e: MessageEvent) {
-    const { jobId, success, metadata, peaks, segments, error } = e.data;
+    const { jobId, success, metadata, peaks, segments, mfccs, cens, error } = e.data;
     const job = this.activeJobs.get(jobId);
     
     if (job) {
@@ -51,11 +53,14 @@ class MetadataScanner {
       
       if (success) {
         if (job.type === 'analyze_waveform') {
-          job.resolve({ peaks, segments } as unknown as TrackMetadata & WaveformAnalysisResult);
+          job.resolve({ peaks, segments, mfccs, cens } as unknown as TrackMetadata & WaveformAnalysisResult);
         } else if (metadata) {
           try {
             // Save to IndexedDB
             const dbMetadata = { ...metadata };
+            if (job.fileHandle) {
+              dbMetadata.fileHandle = job.fileHandle;
+            }
             // We don't want to store DOM nodes in IDB, but the worker doesn't return them anyway
             await db.tracks.put(dbMetadata);
 
@@ -122,13 +127,15 @@ class MetadataScanner {
               this.processNext();
             }, 30000); // Allow more time for large waveforms
 
+            // Copy data and transfer it to avoid main thread stall
+            const clonedAudio = new Float32Array(job.audioData!);
             this.worker.postMessage({
               type: 'analyze_waveform',
               jobId: job.jobId,
-              audioData: job.audioData,
+              audioData: clonedAudio,
               duration: job.duration,
               bpm: job.bpm
-            });
+            }, [clonedAudio.buffer]);
             return;
           }
 

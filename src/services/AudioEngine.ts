@@ -13,6 +13,8 @@ export class Deck {
   
   public peaks: Float32Array | null = null;
   public segments: TrackSegment[] = [];
+  public mfccs?: Float32Array;
+  public cens?: Float32Array;
   public channelVolume: number = 1.0;
   public channelGain: number = 1.0;
   public crossfadeGain: number = 1.0;
@@ -88,6 +90,7 @@ export class Deck {
       this.faustNode.setParamValue('/engine/fx_gate_on', 0);
       this.faustNode.setParamValue('/engine/fx_roll_on', 0);
       this.faustNode.setParamValue('/engine/fx_siren_on', 0);
+      this.faustNode.setParamValue('/engine/fx_compressor_on', 0);
 
       // 3. Connect Graph: Track -> Faust -> Output
       if (this.faustNode) {
@@ -111,26 +114,43 @@ export class Deck {
       const response = await fetch(url);
       const arrayBuffer = await response.arrayBuffer();
       
+      // Yield to let audio engine breathe
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
       // 2. Decode to raw Float32Array PCM
+      // Use OfflineAudioContext for decoding to prevent stuttering/blocking the main active AudioContext
       const audioCtx = AudioEngine.getInstance().context;
-      const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      const offlineCtx = new OfflineAudioContext(2, 1, audioCtx.sampleRate);
+      const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
+      
+      // Yield again
+      await new Promise(resolve => setTimeout(resolve, 10));
       
       // 3. Store PCM in memory
       const leftChannel = audioBuffer.getChannelData(0);
       const rightChannel = audioBuffer.numberOfChannels > 1 ? audioBuffer.getChannelData(1) : leftChannel;
       this.pcmData = leftChannel; // Keep left channel for duration and peaks
       
+      // Yield before large array copy
+      await new Promise(resolve => setTimeout(resolve, 15));
+
       // Explicitly copy the arrays to guarantee they survive postMessage cloning
       const clonedLeft = new Float32Array(leftChannel);
       const clonedRight = new Float32Array(rightChannel);
+
+      // Yield to main thread to prevent UI freezing before sending to worklet
+      await new Promise(resolve => setTimeout(resolve, 15));
 
       // 4. Send memory pointers / buffers to Worklet
       if (this.trackNode) {
         this.trackNode.port.postMessage({
           type: 'LOAD_TRACK',
           buffers: [clonedLeft, clonedRight]
-        });
+        }, [clonedLeft.buffer, clonedRight.buffer]);
       }
+
+      // Yield again
+      await new Promise(resolve => setTimeout(resolve, 10));
 
       await this.generatePeaks(audioBuffer);
     } catch (err) {
@@ -144,6 +164,8 @@ export class Deck {
       const result = await metadataScanner.analyzeWaveform(data, buffer.duration, this.originalBpm);
       this.peaks = result.peaks;
       this.segments = result.segments;
+      this.mfccs = result.mfccs;
+      this.cens = result.cens;
     } catch (err) {
       console.error("Worker waveform analysis failed:", err);
     }
@@ -229,6 +251,9 @@ export class Deck {
   }
   public triggerSiren(isOn: boolean): void {
     if (this.faustNode) this.faustNode.setParamValue('/engine/fx_siren_on', isOn ? 1 : 0);
+  }
+  public setCompressorState(isOn: boolean): void {
+    if (this.faustNode) this.faustNode.setParamValue('/engine/fx_compressor_on', isOn ? 1 : 0);
   }
   public setRoll(isActive: boolean, _rate: number = 8): void {
     if (this.faustNode) {

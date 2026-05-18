@@ -14,6 +14,7 @@ export interface FxState {
   gateOn: boolean;
   rollOn: boolean;
   sirenOn: boolean;
+  compressorOn: boolean;
 }
 
 export interface DeckState {
@@ -29,6 +30,7 @@ export interface DeckState {
   sync: boolean;
   mute: boolean;
   fx: FxState;
+  fxSlots: ['delay'|'reverb'|'phaser'|'gate'|'roll'|'siren'|'compressor', 'delay'|'reverb'|'phaser'|'gate'|'roll'|'siren'|'compressor', 'delay'|'reverb'|'phaser'|'gate'|'roll'|'siren'|'compressor'];
   
   // Track specific analysis data
   introMarker: number;
@@ -48,6 +50,7 @@ const initialFxState: FxState = {
   gateOn: false,
   rollOn: false,
   sirenOn: false,
+  compressorOn: false,
 };
 
 const initialDeckState: DeckState = {
@@ -63,6 +66,7 @@ const initialDeckState: DeckState = {
   sync: false,
   mute: false,
   fx: { ...initialFxState },
+  fxSlots: ['delay', 'reverb', 'phaser'],
   introMarker: 0,
   outroMarker: 0,
   peaks: null,

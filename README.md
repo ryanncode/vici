@@ -1,17 +1,17 @@
 # Vici
 
-Vici is a high-performance, web-based dual-deck DJ auto-mixing application. Built with React 18, Zustand, TypeScript, and the Web Audio API (via Tone.js), Vici acts as an autonomous virtual DJ, allowing users to load local music directories, organize playlists, manipulate audio in real-time, and let the engine seamlessly crossfade between tracks completely hands-free.
+Vici is a high-performance, web-based dual-deck DJ auto-mixing application. Built with React 18, Zustand, TypeScript, and the Web Audio API (via FAUST and custom AudioWorklets), Vici acts as an autonomous virtual DJ, allowing users to load local music directories, organize playlists, manipulate audio in real-time, and let the engine seamlessly crossfade between tracks completely hands-free.
 
 ## Features
 
 - **Modular React Architecture:** Clean separation of concerns with a centralized Zustand `useMixerStore`. The UI is decoupled from the raw audio thread, ensuring peak performance without layout thrashing.
-- **Dual-Deck Architecture:** Independent 'Deck A' and 'Deck B' modules with dedicated `Tone.Player` instances routed into a master `Tone.CrossFade` node.
-- **Parametric EQ & Filters:** Each deck features dedicated 3-band EQ processing (-24dB to +6dB for High/Mid/Low) and a bipolar DJ-style macro filter (Lowpass on the left, Highpass on the right).
-- **Pro FX Bay:** Each deck features a dedicated FX unit with an analog-style Tape Echo, a cavernous Reverb, a sweeping Phaser, a momentary Beat Roll slicer, and a Dub Siren.
-- **Pitch & Tempo Control:** Decks include ±16% pitch faders. Changes to playback rate dynamically adjust a sub-millisecond offset tracker to ensure visually smooth seekbar tracking.
+- **Dual-Deck Architecture:** Independent 'Deck A' and 'Deck B' modules with dedicated `AudioWorkletNode` instances routed into a master FAUST DSP graph.
+- **Parametric EQ & Filters:** Each deck features dedicated 3-band EQ processing (-24dB to +6dB for High/Mid/Low) and a bipolar DJ-style macro filter (Lowpass on the left, Highpass on the right) utilizing analog-modeled State Variable Filters (SVF).
+- **Pro FX Bay:** Each deck features a dedicated FX unit with an analog-style Tape Echo, a cavernous FDN Reverb, a sweeping Phaser, a momentary Beat Roll slicer, and a Dub Siren.
+- **Pitch & Tempo Control:** Decks include ±16% pitch faders using a high-fidelity Kaiser-Bessel windowed Sinc Polyphase Resampler for mastering-grade time-stretching without aliasing distortion.
 - **Sync & Master Lock:** Click `SYNC` to match the opposite deck's tempo instantly. Assigning a deck as `MASTER` forces the secondary deck to mathematically mirror all tempo fluctuations.
 - **High-Performance Waveform Canvas:** Native seekbars allow users to drag the playback position in real-time on a `<canvas>` element rendering audio peaks directly from the buffer. Users can drag interactive Intro and Outro mix markers directly on the waveform.
-- **Automix Supervisor:** A polling loop monitors active track lengths. When a track reaches its Outro marker (or final 15 seconds), the engine initiates a synchronized equal-power crossfade into the standby deck and queues the next track from the library.
+- **Automix Supervisor:** A polling loop monitors active track lengths. When a track reaches its Outro marker (or final 15 seconds), the engine initiates a synchronized equal-power trigonometric crossfade into the standby deck and queues the next track from the library.
 - **Local File Management:** Utilizes the desktop-class `window.showDirectoryPicker` to recursively read local audio folders into the browser without uploading. Includes robust fallback file inputs and Web Worker based ID3/Metadata extraction.
 - **Dexie.js Reactive Database:** IndexedDB caching for all track metadata and peaks ensures instantaneous subsequent loads.
 - **M3U Playlist Support:** Import and export `.m3u` or `.m3u8` playlists to instantly queue up specific sets of tracks. Playlists are permanently saved to the browser's local database and accessible directly from the sidebar.
@@ -22,7 +22,7 @@ Vici is a high-performance, web-based dual-deck DJ auto-mixing application. Buil
 - **Language:** TypeScript
 - **Styling:** Tailwind CSS + Lucide React (Icons)
 - **State Management:** Zustand
-- **Audio Engine:** Web Audio API via `Tone.js`
+- **Audio Engine:** Web Audio API via `@grame/faustwasm` and custom AudioWorklets
 - **Database:** Dexie.js (IndexedDB)
 - **Metadata Parsing:** music-metadata (via Web Workers)
 
@@ -68,13 +68,7 @@ Vici is a high-performance, web-based dual-deck DJ auto-mixing application. Buil
 
 ## Architecture & Roadmap
 
-Vici is built with a decoupled architecture where the React UI, Zustand state, Dexie database, and file management system operate independently from the audio engine. Currently, the audio engine leverages Tone.js to provide robust, high-level DSP components (parametric EQs, pitch shifters, and complex reverbs) for rapid development and stable prototyping.
-
-As the project scales to support more intensive real-time manipulation, we are evaluating several optimization paths to further reduce main-thread audio starvation:
-
-- **Browser-Specific Optimizations:** Due to varying implementations of the Web Audio API and hardware buffering support, Vici is currently optimized for Chromium-based browsers (Chrome, Edge) and Safari. 
-- **Hybrid AudioWorklet Migration:** Future releases will begin isolating high-demand DSP nodes into dedicated `Tone.AudioWorkletNode` instances. Running complex effects in an elevated Worklet context will reduce the processing burden on the primary web audio thread.
-- **WebAssembly (Wasm) Engine:** The long-term roadmap includes the potential to replace the JavaScript audio graph with a custom DSP engine written in C++ or Rust (via frameworks like RNBO or FAUST) compiled to WebAssembly. This engine would run entirely within an isolated `AudioWorklet`, controlled by the React frontend, rendering the audio pipeline maximally resistant to UI thread latency.
+Vici is built with a decoupled architecture where the React UI, Zustand state, Dexie database, and file management system operate independently from the audio engine. The audio engine has been completely migrated to a custom C++ / FAUST DSP architecture compiled to WebAssembly. This replaces the legacy Tone.js implementation, pushing expensive polyphase resampling, analog SVF filters, and feedback delay networks entirely into the `AudioWorklet` processor. This renders the audio pipeline maximally resistant to UI thread latency and ensures mastering-grade playback quality without aliasing.
 
 ## License
 

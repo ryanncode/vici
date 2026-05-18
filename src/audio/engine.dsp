@@ -40,6 +40,9 @@ fx_roll_bpm = hslider("fx_roll_bpm", 120.0, 30.0, 300.0, 0.1) : si.smoo;
 // Siren
 fx_siren_on = hslider("fx_siren_on", 0, 0, 1, 1) : si.smoo;
 
+// Compressor (Macro Dynamics)
+fx_compressor_on = hslider("fx_compressor_on", 0, 0, 1, 1) : si.smoo;
+
 
 // --- DSP Blocks ---
 
@@ -165,5 +168,21 @@ with {
     r_out = r + siren_sound;
 };
 
+// 7. Compressor (Macro Dynamics)
+compressor_fx(l, r) = l_out, r_out
+with {
+    wet = fx_compressor_on;
+    ratio = 2.0;
+    thresh = -12.0;
+    att = 0.01;
+    rel = 0.1;
+    
+    c_l = l : co.compressor_mono(ratio, thresh, att, rel);
+    c_r = r : co.compressor_mono(ratio, thresh, att, rel);
+    
+    l_out = (l * (1.0 - wet)) + (c_l * wet);
+    r_out = (r * (1.0 - wet)) + (c_r * wet);
+};
+
 // --- Main Audio Graph ---
-process = eq : delay_fx : reverb_fx : phaser_fx : roll_fx : gate_fx : siren_fx : dj_filter : *(volume), *(volume) : ma.tanh, ma.tanh;
+process = eq : delay_fx : reverb_fx : phaser_fx : roll_fx : gate_fx : siren_fx : compressor_fx : dj_filter : *(volume), *(volume) : ma.tanh, ma.tanh;

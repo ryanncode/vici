@@ -1,12 +1,21 @@
-import React from 'react';
+import React, { useRef } from 'react';
+import type { DragEvent } from 'react';
 import { useLibraryStore } from '../store/libraryStore';
 import { useDeckControl } from '../hooks/useDeckControl';
 import type { Track } from '../types/mixer';
+import { parseM3U } from '../utils/m3uParser';
+import { db } from '../services/Database';
 
-export const MiniPlaylist: React.FC = () => {
+interface MiniPlaylistProps {
+  onExpandLibrary?: () => void;
+}
+
+export const MiniPlaylist: React.FC<MiniPlaylistProps> = ({ onExpandLibrary }) => {
   const library = useLibraryStore(state => state.library);
+  const setLibrary = useLibraryStore(state => state.setLibrary);
   const deckA = useDeckControl('A');
   const deckB = useDeckControl('B');
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Slice to show up to 5 tracks initially
   const tracks = library || [];
@@ -20,13 +29,100 @@ export const MiniPlaylist: React.FC = () => {
   };
 
   const handleDoubleClick = (track: Track) => {
-    // Basic double click logic: you could alternate, or just load into A by default.
-    // Let's load into A by default for double-click.
     deckA.loadTrack(track);
   };
 
+  const handlePlaylistFile = async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed = parseM3U(text);
+      if (parsed.length > 0) {
+        // Fetch all tracks once to avoid n concurrent full table scans
+        const allTracks = await db.tracks.toArray();
+        const sessionHandles = useLibraryStore.getState().sessionHandles;
+
+        // Resolve tracks from Dexie using paths
+        let playableCount = 0;
+        let missingCount = 0;
+        
+        const resolvedTracks = parsed.map(path => {
+           // Decode URI component in case the m3u has URL encoded file paths (like %20 for space)
+           const filename = decodeURIComponent(path.split(/[/\\]/).pop() || path).replace(/^["']|["']$/g, '').trim();
+           
+           // Dexie's 'filePath' is populated with handle.name which is the exact filename
+           // Use case-insensitive filter to handle Windows path discrepancies
+           const match = allTracks.find(t => 
+             (t.filePath && t.filePath.toLowerCase() === filename.toLowerCase()) || 
+             (t.fileName && t.fileName.toLowerCase() === filename.toLowerCase()) ||
+             (t.title && `${t.title.toLowerCase()}.${(t.fileType||'mp3').toLowerCase()}` === filename.toLowerCase())
+           );
+
+           if (match) {
+             const handles = sessionHandles[match.id];
+             const finalFileHandle = handles?.fileHandle || match.fileHandle;
+             const finalRawFile = handles?.rawFile || match.rawFile;
+             
+             if (finalFileHandle || finalRawFile) {
+               playableCount++;
+             } else {
+               missingCount++;
+             }
+             
+             return { 
+               ...match, 
+               url: '', 
+               duration: match.duration.toString(),
+               fileHandle: finalFileHandle,
+               rawFile: finalRawFile
+             } as unknown as Track;
+           }
+           
+           missingCount++;
+           // Fallback for missing tracks
+           return {
+             id: path,
+             title: filename || 'Unknown',
+             artist: 'Unknown',
+             duration: '0',
+             url: '',
+             filePath: path,
+             bpm: 120
+           } as Track;
+        });
+        
+        setLibrary(resolvedTracks);
+        
+        if (playableCount === 0) {
+          alert(`Found ${parsed.length} tracks in playlist, but none are currently loaded in your library. Please use 'Load Library' on the folder containing them so they can be played!`);
+        } else if (playableCount < parsed.length) {
+          alert(`Playlist loaded. ${playableCount} tracks are playable. ${missingCount} tracks are missing from your loaded library. Please load the containing folder to play them.`);
+        }
+      }
+    } catch(e) {
+      console.error('Failed to parse playlist', e);
+    }
+  };
+
+  const onDragOver = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+  };
+
+  const onDrop = async (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      if (file.name.endsWith('.m3u') || file.name.endsWith('.m3u8')) {
+        await handlePlaylistFile(file);
+      }
+    }
+  };
+
   return (
-    <div className="w-full h-[210px] flex flex-col relative shrink-0 mt-0">
+    <div 
+      className="w-full h-[210px] flex flex-col relative shrink-0 mt-0"
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+    >
       
       {/* Header / Expand Toggle (Floating) */}
       <div className="h-[40px] bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 rounded-2xl flex items-center justify-between px-4 z-10 shadow-sm shrink-0 mb-[10px]">
@@ -39,7 +135,10 @@ export const MiniPlaylist: React.FC = () => {
           </span>
         </div>
         
-        <button className="text-slate-500 hover:text-slate-800 dark:hover:text-white transition flex items-center gap-2 group">
+        <button 
+          onClick={onExpandLibrary}
+          className="text-slate-500 hover:text-slate-800 dark:hover:text-white transition flex items-center gap-2 group"
+        >
           <span className="text-[10px] font-bold uppercase tracking-widest group-hover:text-blue-500 dark:group-hover:text-blue-400">Expand Library</span>
           <div className="w-5 h-5 rounded-lg bg-slate-100 dark:bg-slate-700 flex items-center justify-center border border-slate-300 dark:border-slate-600 group-hover:border-blue-500 transition-colors">
             ▲
@@ -110,8 +209,24 @@ export const MiniPlaylist: React.FC = () => {
           ))
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-slate-500 dark:text-slate-400 font-mono text-sm gap-2">
-            <div>NO TRACKS IN QUEUE</div>
-            <button className="text-xs text-blue-500 hover:text-blue-600 dark:hover:text-blue-400 underline underline-offset-4">Open Library Manager</button>
+            <div>DRAG & DROP .M3U PLAYLIST OR</div>
+            <input 
+              type="file" 
+              accept=".m3u,.m3u8" 
+              className="hidden" 
+              ref={fileInputRef} 
+              onChange={(e) => {
+                if (e.target.files && e.target.files.length > 0) {
+                  handlePlaylistFile(e.target.files[0]);
+                }
+              }} 
+            />
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              className="text-xs text-blue-500 hover:text-blue-600 dark:hover:text-blue-400 underline underline-offset-4"
+            >
+              Open M3U Playlist
+            </button>
           </div>
         )}
       </div>

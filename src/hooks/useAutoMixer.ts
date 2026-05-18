@@ -49,15 +49,17 @@ export function useAutoMixer({ library, isAutomixEnabled, onTransitionStart, onT
       if (activeDeck === 'A' && deckAState.track && audio.deckA.loaded) {
         const current = audio.deckA.getCurrentTime();
         const duration = audio.deckA.duration;
-        const outroMarker = deckAState.outroMarker ?? (duration - 15);
+        const bpm = audio.deckA.currentBpm > 0 ? audio.deckA.currentBpm : (deckAState.track.bpm || 120);
+        fadeDuration = (60 / bpm) * 32; // 32 beats based on active BPM
+        const outroMarker = deckAState.outroMarker ?? (duration - fadeDuration);
         timePastOutro = current - outroMarker;
-        fadeDuration = duration - outroMarker;
       } else if (activeDeck === 'B' && deckBState.track && audio.deckB.loaded) {
         const current = audio.deckB.getCurrentTime();
         const duration = audio.deckB.duration;
-        const outroMarker = deckBState.outroMarker ?? (duration - 15);
+        const bpm = audio.deckB.currentBpm > 0 ? audio.deckB.currentBpm : (deckBState.track.bpm || 120);
+        fadeDuration = (60 / bpm) * 32; // 32 beats based on active BPM
+        const outroMarker = deckBState.outroMarker ?? (duration - fadeDuration);
         timePastOutro = current - outroMarker;
-        fadeDuration = duration - outroMarker;
       }
 
       // Trigger transition logic if threshold breached
@@ -162,17 +164,101 @@ export function useAutoMixer({ library, isAutomixEnabled, onTransitionStart, onT
         
         onTransitionStart(nextDeckId, nextTrack!);
 
-        // 3. Ramp Crossfader
+        // 3. Ramp Crossfader & Handle EQ Ducking / Macro Dynamics
         const targetValue = currentActive === 'A' ? 1 : 0;
-        // audio.crossfader.fade.rampTo(targetValue, fadeDuration);
-        audio.setCrossfadeValue(targetValue);
+        const startValue = currentActive === 'A' ? 0 : 1;
+        const startTime = performance.now();
+        const durationMs = fadeDuration * 1000;
+        
+        // Macro Dynamics: Auto set 3rd FX to compressor and turn it on
+        const newSlots = [...nextDeckState.fxSlots] as typeof nextDeckState.fxSlots;
+        newSlots[2] = 'compressor';
+        useMixerStore.getState().setDeckState(nextDeckId, { fxSlots: newSlots });
+        useMixerStore.getState().setDeckFx(nextDeckId, { compressorOn: true });
+        targetDeck.setCompressorState(true);
+        
+        // Automated FX Spillover: Ramp up delay on outgoing deck
+        const currentDeckState = currentActive === 'A' ? deckAState : deckBState;
+        const currentSlots = [...currentDeckState.fxSlots] as typeof currentDeckState.fxSlots;
+        currentSlots[0] = 'delay';
+        useMixerStore.getState().setDeckState(currentActive, { fxSlots: currentSlots });
+        useMixerStore.getState().setDeckFx(currentActive, { delayOn: true, delayTime: 0.75, delayFeedback: 0.2 });
+        currentDeck.setDelayState(true);
+        currentDeck.setDelayTime(0.75);
+        currentDeck.setDelayFeedback(0.2);
 
-        transitionTimeoutRef.current = setTimeout(() => {
-          currentDeck.stop();
-          isTransitioning.current = false;
-          transitionTimeoutRef.current = null;
-          onTransitionComplete(nextDeckId, nextTrack!);
-        }, fadeDuration * 1000);
+        // Cosine Similarity Matching (Heuristic Logging)
+        let similarity = 0;
+        if (currentDeck.cens && targetDeck.cens && currentDeck.cens.length >= 12 && targetDeck.cens.length >= 12) {
+           let dotProduct = 0;
+           let normA = 0;
+           let normB = 0;
+           for (let i = 0; i < 12; i++) {
+              dotProduct += currentDeck.cens[i] * targetDeck.cens[i];
+              normA += currentDeck.cens[i] ** 2;
+              normB += targetDeck.cens[i] ** 2;
+           }
+           if (normA > 0 && normB > 0) {
+              similarity = dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+           }
+           console.log(`[AutoMixer] Harmonic Cosine Similarity for transition: ${similarity.toFixed(3)}`);
+        }
+
+        // Dynamic EQ Masking: Duck incoming low EQ
+        useMixerStore.getState().setDeckEq(nextDeckId, { low: -12 });
+        targetDeck.setEq('low', -12);
+        let eqRestored = false;
+
+        const animateTransition = () => {
+          if (!isTransitioning.current) return;
+          
+          const now = performance.now();
+          const elapsed = now - startTime;
+          const progress = Math.min(elapsed / durationMs, 1);
+          
+          const currentValue = startValue + (targetValue - startValue) * progress;
+          
+          useMixerStore.getState().setCrossfade(currentValue);
+          audio.setCrossfadeValue(currentValue);
+          
+          // Ramp delay feedback from 0.2 to 0.75 for trailing tail
+          const delayFeedback = 0.2 + (0.55 * progress);
+          useMixerStore.getState().setDeckFx(currentActive, { delayFeedback });
+          currentDeck.setDelayFeedback(delayFeedback);
+
+          // Check outgoing deck amplitude for EQ masking restore
+          if (!eqRestored && currentDeck.peaks && currentDeck.duration > 0) {
+            const outProgress = currentDeck.getCurrentTime() / currentDeck.duration;
+            const index = Math.floor(outProgress * currentDeck.peaks.length);
+            const rawPeak = currentDeck.peaks[index] || 0;
+            const outLevel = rawPeak * currentDeck.channelVolume * currentDeck.channelGain * currentDeck.crossfadeGain;
+            
+            // If amplitude drops below ~0.25 (-12dB)
+            if (outLevel < 0.25) {
+              eqRestored = true;
+              // Smooth ramp back to 0
+              let eqVal = -12;
+              const eqRamp = () => {
+                if (!isTransitioning.current && eqVal === -12) return; // cancelled early
+                eqVal += 0.5; // ramp step
+                if (eqVal > 0) eqVal = 0;
+                useMixerStore.getState().setDeckEq(nextDeckId, { low: eqVal });
+                targetDeck.setEq('low', eqVal);
+                if (eqVal < 0) requestAnimationFrame(eqRamp);
+              };
+              requestAnimationFrame(eqRamp);
+            }
+          }
+
+          if (progress < 1) {
+            requestAnimationFrame(animateTransition);
+          } else {
+             currentDeck.stop();
+             isTransitioning.current = false;
+             onTransitionComplete(nextDeckId, nextTrack!);
+          }
+        };
+        requestAnimationFrame(animateTransition);
       } catch (err) {
         console.error("AutoMixer Transition Failed:", err);
         isTransitioning.current = false;

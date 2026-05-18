@@ -7,6 +7,7 @@ import { useRegisterSW } from 'virtual:pwa-register/react';
 import { AudioEngine } from './services/AudioEngine';
 import { useAutoMixer } from './hooks/useAutoMixer';
 import { Browser } from './components/Browser';
+import { Hotkeys } from './components/Hotkeys';
 import { useMixerStore } from './store/mixerStore';
 import { RotaryKnob } from './components/CenterMixer';
 import { useLibrary } from './hooks/useLibrary';
@@ -110,8 +111,8 @@ export default function App() {
   const deckAControl = useDeckControl('A');
   const deckBControl = useDeckControl('B');
   
-  const [isLibraryMaximized, setIsLibraryMaximized] = useState(false);
-  const toggleLibraryMaximize = () => setIsLibraryMaximized(!isLibraryMaximized);
+  const [activeView, setActiveView] = useState<'mixer' | 'library' | 'hotkeys'>('mixer');
+  const [isMidiLearnActive, setIsMidiLearnActive] = useState(false);
 
   const getNextTrack = (currentTrackId?: string): Track | null => {
     if (displayTracks.length === 0) return null;
@@ -283,8 +284,19 @@ export default function App() {
             </div>
           </div>
 
-          {/* Right Section (200px) */}
-          <div className="w-[200px] flex items-center justify-end gap-3">
+          {/* Right Section (250px) */}
+          <div className="w-[250px] flex items-center justify-end gap-3">
+            <button 
+              onClick={() => setIsMidiLearnActive(!isMidiLearnActive)}
+              className={`px-2 py-1 rounded text-[9px] uppercase font-bold tracking-widest transition-colors flex items-center gap-1 shadow-sm border ${
+                isMidiLearnActive 
+                  ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-500 border-amber-500/30' 
+                  : 'bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-700'
+              }`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>
+              MIDI Learn
+            </button>
             <button 
               onClick={() => setIsDarkMode(!isDarkMode)}
               className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 flex items-center justify-center border-2 border-slate-300 dark:border-slate-700 transition"
@@ -292,21 +304,37 @@ export default function App() {
             >
               {isDarkMode ? '☀' : '🌙'}
             </button>
-            <button className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 flex items-center justify-center border-2 border-slate-300 dark:border-slate-700 transition">
+            <button 
+              onClick={() => setActiveView(activeView === 'hotkeys' ? 'mixer' : 'hotkeys')}
+              className={`w-8 h-8 rounded-lg flex items-center justify-center border-2 transition ${
+                activeView === 'hotkeys' 
+                  ? 'bg-blue-600 text-white border-blue-500 shadow-sm' 
+                  : 'bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700'
+              }`}
+              title="Settings & Hotkeys"
+            >
               ⚙
             </button>
             <button 
-              onClick={toggleLibraryMaximize}
-              className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg border-2 transition-colors shadow-sm ${isLibraryMaximized ? 'bg-blue-600 text-white border-blue-500' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700 hover:bg-slate-300 dark:hover:bg-slate-700'}`}
+              onClick={() => setActiveView(activeView === 'library' ? 'mixer' : 'library')}
+              className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg border-2 transition-colors shadow-sm ${
+                activeView === 'library' 
+                  ? 'bg-blue-600 text-white border-blue-500' 
+                  : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700 hover:bg-slate-300 dark:hover:bg-slate-700'
+              }`}
             >
               Library
             </button>
           </div>
         </div>
 
-        {isLibraryMaximized ? (
+        {activeView === 'library' ? (
           <div className="flex-1 flex w-full border-2 border-slate-300 dark:border-slate-700 rounded-2xl overflow-hidden shadow-md">
             <Browser />
+          </div>
+        ) : activeView === 'hotkeys' ? (
+          <div className="flex-1 flex w-full border-2 border-slate-300 dark:border-slate-700 rounded-2xl overflow-hidden shadow-md">
+            <Hotkeys />
           </div>
         ) : (
           <>
@@ -321,7 +349,7 @@ export default function App() {
             </div>
 
             {/* Mini-Playlist / Library Snippet (210px) */}
-            <MiniPlaylist />
+            <MiniPlaylist onExpandLibrary={() => setActiveView('library')} />
           </>
         )}
 

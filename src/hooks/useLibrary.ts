@@ -33,7 +33,7 @@ export function useLibrary() {
 
           for (let i = 0; i < handles.length; i++) {
              const handle = handles[i];
-             const cached = await db.tracks.where('fileName').equals(handle.name).first();
+             const cached = await db.tracks.where('filePath').equals(handle.name).first();
              if (cached) {
                 newIds.push(cached.id);
                 newHandles[cached.id] = { fileHandle: handle };
@@ -98,19 +98,29 @@ export function useLibrary() {
 
     for (let i = 0; i < audioFiles.length; i++) {
       const file = audioFiles[i];
-      const id = `fallback-${Date.now()}-${i}`;
-      await db.tracks.put({
-        id,
-        filePath: file.name,
-        fileName: file.name,
-        title: file.name.replace(/\.[^/.]+$/, ""),
-        artist: 'Local File',
-        bpm: 120,
-        duration: 0
-      });
-      newIds.push(id);
-      newHandles[id] = { rawFile: file };
-      unScanned.push({ id, rawFile: file, filePath: file.name });
+      const cached = await db.tracks.where('filePath').equals(file.name).first();
+      
+      if (cached) {
+         newIds.push(cached.id);
+         newHandles[cached.id] = { rawFile: file };
+         if (!cached.isScanned || cached.duration === 0) {
+           unScanned.push({ id: cached.id, rawFile: file, filePath: file.name });
+         }
+      } else {
+         const id = `fallback-${Date.now()}-${i}`;
+         await db.tracks.put({
+           id,
+           filePath: file.name,
+           fileName: file.name,
+           title: file.name.replace(/\.[^/.]+$/, ""),
+           artist: 'Local File',
+           bpm: 120,
+           duration: 0
+         });
+         newIds.push(id);
+         newHandles[id] = { rawFile: file };
+         unScanned.push({ id, rawFile: file, filePath: file.name });
+      }
     }
 
     store.setSessionHandles(prev => ({ ...prev, ...newHandles }));

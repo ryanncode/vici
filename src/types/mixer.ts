@@ -26,6 +26,8 @@ export interface TrackMetadata {
   // Non-indexed properties
   albumArt?: Blob;
   waveformPeaks?: Float32Array;
+  mfccs?: Float32Array;
+  cens?: Float32Array;
   segments?: TrackSegment[];
   introMarker?: number;
   outroMarker?: number;
@@ -48,6 +50,8 @@ export interface Track {
   replayGain?: number;
   url: string; // Dynamic Object URL or local asset path
   waveformPeaks?: Float32Array;
+  mfccs?: Float32Array;
+  cens?: Float32Array;
   segments?: TrackSegment[];
   introMarker?: number;
   outroMarker?: number;

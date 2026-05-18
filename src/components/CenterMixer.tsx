@@ -176,26 +176,8 @@ export const CenterMixer: React.FC = () => {
   const deckA = useMixerStore(state => state.deckA);
   const deckB = useMixerStore(state => state.deckB);
   const crossfade = useMixerStore(state => state.crossfade);
-  const isAutomixEnabled = useMixerStore(state => state.isAutomixEnabled);
   
   const crossfadeSliderRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (!isAutomixEnabled) return;
-    let lastVal = '';
-    const loop = () => {
-      if (crossfadeSliderRef.current) {
-        const engine = AudioEngine.getInstance();
-        const valStr = engine.deckB.channelVolume.toFixed(3);
-        if (valStr !== lastVal) {
-          crossfadeSliderRef.current.value = valStr;
-          lastVal = valStr;
-        }
-      }
-    };
-    const interval = setInterval(loop, 50);
-    return () => clearInterval(interval);
-  }, [isAutomixEnabled]);
 
   const lastStateUpdateRef = useRef<{ [key: string]: number }>({});
   const dspThrottleRef = useRef<{ [key: string]: number }>({});

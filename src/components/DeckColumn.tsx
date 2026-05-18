@@ -31,7 +31,9 @@ export const DeckColumn: React.FC<DeckColumnProps> = ({ deckId }) => {
   } = useDeckControl(deckId);
   
   const [padMode, setPadMode] = useState<'HOT_CUE' | 'LOOP' | 'SAMPLER'>('HOT_CUE');
-  const [fxSlots, setFxSlots] = useState<['delay'|'reverb'|'phaser'|'gate'|'roll'|'siren', 'delay'|'reverb'|'phaser'|'gate'|'roll'|'siren', 'delay'|'reverb'|'phaser'|'gate'|'roll'|'siren']>(['delay', 'reverb', 'phaser']);
+  
+  const fxSlots = state.fxSlots;
+  const setFxSlots = (slots: typeof fxSlots) => useMixerStore.getState().setDeckState(deckId, { fxSlots: slots });
 
   const bpmRef = useRef<HTMLSpanElement>(null);
   const elapsedRef = useRef<HTMLSpanElement>(null);
@@ -240,7 +242,7 @@ export const DeckColumn: React.FC<DeckColumnProps> = ({ deckId }) => {
               return (
                 <div key={slotIndex} className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg border border-slate-200 dark:border-slate-700/50 mb-1 last:mb-0 shadow-sm">
                   <div 
-                    onClick={() => handleFxToggle(fxType as 'delay' | 'reverb' | 'phaser' | 'gate' | 'roll' | 'siren')}
+                    onClick={() => handleFxToggle(fxType as 'delay' | 'reverb' | 'phaser' | 'gate' | 'roll' | 'siren' | 'compressor')}
                     className={`w-10 h-8 rounded-lg border flex flex-col items-center justify-center cursor-pointer transition-colors shrink-0 ${isOn ? 'bg-blue-100 dark:bg-blue-900 border-blue-400 dark:border-blue-600' : 'bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-600 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
                   >
                     <div className={`w-6 h-1 rounded-full mb-1 ${isOn ? 'bg-blue-500' : 'bg-slate-400 dark:bg-slate-500'}`}></div>
@@ -252,7 +254,7 @@ export const DeckColumn: React.FC<DeckColumnProps> = ({ deckId }) => {
                       value={fxType} 
                       onChange={(e) => {
                         const newSlots = [...fxSlots] as typeof fxSlots;
-                        newSlots[slotIndex] = e.target.value as 'delay' | 'reverb' | 'phaser' | 'gate' | 'roll' | 'siren';
+                        newSlots[slotIndex] = e.target.value as 'delay' | 'reverb' | 'phaser' | 'gate' | 'roll' | 'siren' | 'compressor';
                         setFxSlots(newSlots);
                       }}
                       className="bg-transparent border border-slate-300 dark:border-slate-600 text-[9px] font-bold uppercase text-slate-700 dark:text-slate-300 rounded px-1 py-1 outline-none w-full"
@@ -263,6 +265,7 @@ export const DeckColumn: React.FC<DeckColumnProps> = ({ deckId }) => {
                       <option value="gate">Gate</option>
                       <option value="roll">Roll</option>
                       <option value="siren">Siren</option>
+                      <option value="compressor">Comp</option>
                     </select>
                   </div>
                   

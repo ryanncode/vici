@@ -26,7 +26,6 @@ const Waveform: React.FC<WaveformProps> = React.memo(({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const playheadRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const [draggingMarker, setDraggingMarker] = useState<'intro' | 'outro' | 'playhead' | null>(null);
   const [dragTime, setDragTime] = useState<number | null>(null);
@@ -94,6 +93,7 @@ const Waveform: React.FC<WaveformProps> = React.memo(({
   }, [onSeek, onMarkerChange]);
 
   useEffect(() => {
+    let animationFrameId: number;
     let lastPctStr = '';
 
     const updatePlayhead = () => {
@@ -104,8 +104,7 @@ const Waveform: React.FC<WaveformProps> = React.memo(({
       if (duration > 0 && draggingMarker !== 'playhead') {
         const engine = AudioEngine.getInstance();
         const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
-        const current = deckEngine.getCurrentTime();
-        pct = (current / duration) * 100;
+        pct = (deckEngine.getCurrentTime() / duration) * 100;
         shouldUpdate = true;
       } else if (draggingMarker === 'playhead' && dragTime !== null && duration > 0) {
         pct = (dragTime / duration) * 100;
@@ -113,21 +112,20 @@ const Waveform: React.FC<WaveformProps> = React.memo(({
       }
       
       if (shouldUpdate) {
-        const pctStr = pct.toFixed(2);
+        const pctStr = pct.toFixed(3);
         if (pctStr !== lastPctStr) {
-          if (playheadRef.current) {
-            playheadRef.current.style.left = `${pctStr}%`;
-          }
           if (overlayRef.current) {
             overlayRef.current.style.width = `${pctStr}%`;
           }
           lastPctStr = pctStr;
         }
       }
+      
+      animationFrameId = requestAnimationFrame(updatePlayhead);
     };
 
-    const intervalId = setInterval(updatePlayhead, 50);
-    return () => clearInterval(intervalId);
+    animationFrameId = requestAnimationFrame(updatePlayhead);
+    return () => cancelAnimationFrame(animationFrameId);
   }, [deckId, draggingMarker, dragTime]);
 
   const getMouseTime = (e: ReactMouseEvent | globalThis.MouseEvent) => {
@@ -210,16 +208,10 @@ const Waveform: React.FC<WaveformProps> = React.memo(({
 
       <div 
         ref={overlayRef}
-        className="absolute top-0 bottom-0 left-0 bg-slate-950/40 pointer-events-none mix-blend-overlay"
+        className="absolute top-0 bottom-0 left-0 bg-slate-950/40 pointer-events-none mix-blend-overlay border-r-[4px] border-slate-800 dark:border-slate-500"
         style={{ width: '0%' }}
       />
       
-      <div 
-        ref={playheadRef}
-        className="absolute top-0 bottom-0 w-0.5 bg-white shadow-[0_0_5px_rgba(255,255,255,0.8)] pointer-events-none z-20 hidden"
-        style={{ left: '0%' }}
-      />
-
       <div 
         className="absolute top-0 bottom-0 w-px bg-green-500 z-10 group hidden"
         style={{ left: `${introPct}%` }}
@@ -255,9 +247,6 @@ export const StackedWaveforms: React.FC = () => {
 
   return (
     <div className="h-[150px] shrink-0 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-700 rounded-2xl flex flex-col w-full relative overflow-hidden shadow-lg">
-      
-      {/* Central Playhead Line (Static, dead center) */}
-      <div className="absolute top-[20px] bottom-[20px] left-1/2 w-1 bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.8)] z-50 -translate-x-1/2 pointer-events-none rounded-full"></div>
 
       {/* Deck A Overview (20px) */}
       <div className="h-[20px] w-full bg-slate-100 dark:bg-slate-950 flex relative border-b-2 border-slate-200 dark:border-slate-800 group cursor-pointer overflow-hidden">
