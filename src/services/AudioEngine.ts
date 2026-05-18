@@ -21,18 +21,20 @@ export class Deck {
   public crossfadeGain: number = 1.0;
   public trackGainDb: number = 0;
   public currentTime: number = 0;
+  
+  private _duration: number = 0;
+  private _loaded: boolean = false;
 
   // Web Audio Nodes
   private trackNode: AudioWorkletNode | null = null;
   private faustNode: any | null = null;
-  private pcmData: Float32Array | null = null;
   private outputNode: AudioNode;
 
   public get duration(): number {
-    return this.pcmData ? this.pcmData.length / this.outputNode.context.sampleRate : 0;
+    return this._duration;
   }
   public get loaded(): boolean {
-    return this.pcmData !== null;
+    return this._loaded;
   }
   public mute: boolean = false;
 
@@ -122,92 +124,83 @@ export class Deck {
       const response = await fetch(url);
       const arrayBuffer = await response.arrayBuffer();
       
-      // Yield to let audio engine breathe
-      await new Promise(resolve => setTimeout(resolve, 10));
-      
-      // 2. Decode to raw Float32Array PCM
-      // Use OfflineAudioContext for decoding to prevent stuttering/blocking the main active AudioContext
-      const audioCtx = AudioEngine.getInstance().context;
-      const offlineCtx = new OfflineAudioContext(2, 1, audioCtx.sampleRate);
-      const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
-      
-      // Yield again
-      await new Promise(resolve => setTimeout(resolve, 10));
-      
-      // 3. Store PCM in memory
-      const leftChannel = audioBuffer.getChannelData(0);
-      const rightChannel = audioBuffer.numberOfChannels > 1 ? audioBuffer.getChannelData(1) : leftChannel;
-      this.pcmData = leftChannel; // Keep left channel for duration and peaks
-      
-      // Yield before large array copy
-      await new Promise(resolve => setTimeout(resolve, 15));
-
-      // Generate peaks FIRST so waveforms load regardless of streaming setup success
-      await this.generatePeaks(audioBuffer);
-
-      // Explicitly copy the arrays to guarantee they survive postMessage cloning
-      const clonedLeft = new Float32Array(leftChannel);
-      const clonedRight = new Float32Array(rightChannel);
-      const bufferLength = clonedLeft.length;
-
-      // Yield to main thread to prevent UI freezing before sending to worklet
-      await new Promise(resolve => setTimeout(resolve, 15));
-
       // Feature detection for cross-origin isolation and SharedArrayBuffer
       const hasSharedArrayBuffer = typeof SharedArrayBuffer !== 'undefined' && globalThis.crossOriginIsolated;
+      
+      const capacity = 131072; // ~1.5s at 44.1kHz, 2 channels interleaved
+      const ringBuffer = hasSharedArrayBuffer ? new SharedRingBuffer(capacity) : null;
+      const sharedBuffer = ringBuffer ? ringBuffer.getSharedBuffer() : null;
 
-      if (hasSharedArrayBuffer) {
-        // 4. Setup SharedRingBuffer for streaming
-        const capacity = 131072; // ~1.5s at 44.1kHz, 2 channels interleaved
-        const ringBuffer = new SharedRingBuffer(capacity);
-        const sharedBuffer = ringBuffer.getSharedBuffer();
+      // 2. Decode in background worker to completely bypass main thread memory allocation
+      const workerResponse = await new Promise<{ peaks: Float32Array, duration: number, bufferLength: number, trackSampleRate: number, leftChannel?: Float32Array, rightChannel?: Float32Array }>((resolve, reject) => {
+        if (!AudioEngine.getInstance().decodingWorker) return reject("No decoding worker available");
+        
+        const worker = AudioEngine.getInstance().decodingWorker!;
+        
+        const onMessage = (e: MessageEvent) => {
+          if (e.data.type === 'DECODE_DONE') {
+            worker.removeEventListener('message', onMessage);
+            resolve(e.data);
+          } else if (e.data.type === 'DECODE_ERROR') {
+            worker.removeEventListener('message', onMessage);
+            reject(new Error(e.data.error));
+          }
+        };
+        worker.addEventListener('message', onMessage);
 
-        // Send to background worker to stream
-        if (AudioEngine.getInstance().decodingWorker) {
-          AudioEngine.getInstance().decodingWorker!.postMessage({
-            type: 'STREAM_DECODED',
-            payload: {
-              deckId: this.id,
-              buffers: [clonedLeft, clonedRight],
-              sharedBuffer,
-              capacity
-            }
-          }, [clonedLeft.buffer, clonedRight.buffer]);
-        }
+        const extMatch = url.match(/\.([a-z0-9]+)(?:\?.*)?$/i);
+        const derivedType = extMatch ? extMatch[1].toLowerCase() : 'mp3';
 
-        // Send memory pointers / buffers to Worklet
+        worker.postMessage({
+          type: 'DECODE',
+          payload: {
+            buffer: arrayBuffer,
+            fileType: derivedType,
+            sharedBuffer,
+            capacity,
+            deckId: this.id
+          }
+        }, [arrayBuffer]);
+      });
+
+      // 3. Generate metadata from precomputed peaks
+      await this.generatePeaks(workerResponse.peaks, workerResponse.duration);
+      this._duration = workerResponse.duration;
+      this._loaded = true;
+
+      // 4. Send memory pointers / buffers to Worklet
+      if (hasSharedArrayBuffer && sharedBuffer) {
+        // Send memory pointers to Worklet
         if (this.trackNode) {
           this.trackNode.port.postMessage({
             type: 'LOAD_TRACK',
             sharedBuffer,
             capacity,
-            bufferLength
+            bufferLength: workerResponse.bufferLength,
+            trackSampleRate: workerResponse.trackSampleRate
           });
         }
       } else {
         console.warn("SharedArrayBuffer not supported (missing COOP/COEP). Falling back to full buffer transfer.");
         // Send full buffer directly to worklet
-        if (this.trackNode) {
+        if (this.trackNode && workerResponse.leftChannel && workerResponse.rightChannel) {
           this.trackNode.port.postMessage({
             type: 'LOAD_TRACK_FULL',
-            leftChannel: clonedLeft,
-            rightChannel: clonedRight,
-            bufferLength
-          }, [clonedLeft.buffer, clonedRight.buffer]);
+            leftChannel: workerResponse.leftChannel,
+            rightChannel: workerResponse.rightChannel,
+            bufferLength: workerResponse.bufferLength,
+            trackSampleRate: workerResponse.trackSampleRate
+          }, [workerResponse.leftChannel.buffer, workerResponse.rightChannel.buffer]);
         }
       }
-
-      // Yield again
-      await new Promise(resolve => setTimeout(resolve, 10));
     } catch (err) {
       console.error("Failed to load track:", err);
     }
   }
 
-  private async generatePeaks(buffer: AudioBuffer) {
-    const data = buffer.getChannelData(0);
+  private async generatePeaks(peaksOrAudio: Float32Array, duration: number) {
     try {
-      const result = await metadataScanner.analyzeWaveform(data, buffer.duration, this.originalBpm);
+      const result = await metadataScanner.analyzeWaveform(peaksOrAudio, duration, this.originalBpm, true);
       this.peaks = result.peaks;
       this.segments = result.segments;
       this.mfccs = result.mfccs;

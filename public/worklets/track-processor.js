@@ -65,6 +65,7 @@ class TrackProcessor extends AudioWorkletProcessor {
     this.outputHeap = null;
 
     this.bufferLength = 0;
+    this.trackSampleRate = sampleRate;
     this.ringBuffer = null;
     this.localBuffer = null; // We maintain a local circular buffer for CROSSINGS and seeking
     this.localCapacity = 131072;
@@ -85,6 +86,7 @@ class TrackProcessor extends AudioWorkletProcessor {
         this.fullBuffer = null;
         this.ringBuffer = new WorkletSharedRingBuffer(e.data.capacity, e.data.sharedBuffer);
         this.bufferLength = e.data.bufferLength || 0;
+        this.trackSampleRate = e.data.trackSampleRate || sampleRate;
         this.localBuffer = new Float32Array(this.localCapacity * 2);
         this.playhead = 0;
         this.expectedPullFrame = 0;
@@ -96,6 +98,7 @@ class TrackProcessor extends AudioWorkletProcessor {
         this.localBuffer = null;
         this.fullBuffer = [e.data.leftChannel, e.data.rightChannel];
         this.bufferLength = e.data.bufferLength || 0;
+        this.trackSampleRate = e.data.trackSampleRate || sampleRate;
         this.playhead = 0;
         if (this.bungee) this.bungee.reset();
         console.log("TrackProcessor: LOAD_TRACK_FULL static buffer connected.");
@@ -143,7 +146,7 @@ class TrackProcessor extends AudioWorkletProcessor {
       recreateOutputHeap = true;
     }
 
-    const memoryBuffer = this.wasmModule.wasmMemory.buffer;
+    const memoryBuffer = this.wasmModule.HEAPF32 ? this.wasmModule.HEAPF32.buffer : this.wasmModule.wasmMemory.buffer;
     if (recreateInputHeap || !this.inputHeap || this.inputHeap.buffer !== memoryBuffer) {
       this.inputHeap = new Float32Array(memoryBuffer, this.inputPtr, this.inputCapacity / 4);
     }
@@ -216,6 +219,10 @@ class TrackProcessor extends AudioWorkletProcessor {
 
     // Determine how many input frames we need based on playback rate and key lock
     let ratio = Math.max(0.1, this.playbackRate);
+    
+    // Correct for sample rate mismatch between track and hardware AudioContext
+    const sampleRateRatio = (this.trackSampleRate || sampleRate) / sampleRate;
+    ratio *= sampleRateRatio;
     
     // We fetch a block of frames.
     if (this.keyLock && this.bungee) {

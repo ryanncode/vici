@@ -19,6 +19,7 @@ interface ScanJob {
   audioData?: Float32Array;
   duration?: number;
   bpm?: number;
+  isPrecomputedPeaks?: boolean;
   resolve: (value: TrackMetadata & WaveformAnalysisResult) => void;
   reject: (reason?: unknown) => void;
   timeoutId?: ReturnType<typeof setTimeout>;
@@ -134,7 +135,8 @@ class MetadataScanner {
               jobId: job.jobId,
               audioData: clonedAudio,
               duration: job.duration,
-              bpm: job.bpm
+              bpm: job.bpm,
+              isPrecomputedPeaks: job.isPrecomputedPeaks
             }, [clonedAudio.buffer]);
             return;
           }
@@ -183,7 +185,7 @@ class MetadataScanner {
     }
   }
 
-  public async analyzeWaveform(audioData: Float32Array, duration: number, bpm: number): Promise<WaveformAnalysisResult> {
+  public async analyzeWaveform(peaksOrAudio: Float32Array, duration: number, bpm: number, isPrecomputedPeaks = false): Promise<WaveformAnalysisResult> {
     return new Promise((resolve, reject) => {
       this.jobCounter = (this.jobCounter + 1) % 1000000;
       const jobId = `job_wf_${Date.now()}_${this.jobCounter}`;
@@ -191,12 +193,15 @@ class MetadataScanner {
       this.queue.push({
         jobId,
         type: 'analyze_waveform',
-        audioData,
+        audioData: peaksOrAudio,
         duration,
         bpm,
+        isPrecomputedPeaks,
+        // We'll pack the flag onto the job object or just handle it. We can add a property to the job.
         resolve: resolve as unknown as (value: TrackMetadata & WaveformAnalysisResult) => void,
         reject
       });
+      // Need to add `isPrecomputedPeaks` to the job. Let's do that cleanly.
 
       this.processNext();
     });

@@ -167,35 +167,40 @@ function analyzeSegmentsLogic(peaks: Float32Array, duration: number, originalBpm
   return subdivided;
 }
 
-self.onmessage = async (e: MessageEvent<{ type?: string, jobId: string, file?: File, filePath?: string, existingId?: string, audioData?: Float32Array, duration?: number, bpm?: number }>) => {
+self.onmessage = async (e: MessageEvent<{ type?: string, jobId: string, file?: File, filePath?: string, existingId?: string, audioData?: Float32Array, duration?: number, bpm?: number, isPrecomputedPeaks?: boolean }>) => {
   const data = e.data;
   
   if (data.type === 'analyze_waveform') {
-    const { jobId, audioData, duration, bpm } = data;
+    const { jobId, audioData, duration, bpm, isPrecomputedPeaks } = data;
     try {
       if (!audioData || !duration) throw new Error("Missing audio data for waveform analysis");
       
-      const numPeaks = 1000;
-      const blockSize = Math.floor(audioData.length / numPeaks);
-      const peaks = new Float32Array(numPeaks);
-      
-      for (let i = 0; i < numPeaks; i++) {
-        let sum = 0;
-        const start = i * blockSize;
-        const end = start + blockSize;
-        for (let j = start; j < end; j++) {
-          sum += Math.abs(audioData[j]);
-        }
-        peaks[i] = sum / blockSize;
-      }
-      
-      let max = 0;
-      for (let i = 0; i < numPeaks; i++) {
-        if (peaks[i] > max) max = peaks[i];
-      }
-      if (max > 0) {
+      let peaks: Float32Array;
+      if (isPrecomputedPeaks) {
+        peaks = audioData;
+      } else {
+        const numPeaks = 1000;
+        const blockSize = Math.floor(audioData.length / numPeaks);
+        peaks = new Float32Array(numPeaks);
+        
         for (let i = 0; i < numPeaks; i++) {
-          peaks[i] = peaks[i] / max;
+          let sum = 0;
+          const start = i * blockSize;
+          const end = start + blockSize;
+          for (let j = start; j < end; j++) {
+            sum += Math.abs(audioData[j]);
+          }
+          peaks[i] = sum / blockSize;
+        }
+        
+        let max = 0;
+        for (let i = 0; i < numPeaks; i++) {
+          if (peaks[i] > max) max = peaks[i];
+        }
+        if (max > 0) {
+          for (let i = 0; i < numPeaks; i++) {
+            peaks[i] = peaks[i] / max;
+          }
         }
       }
 

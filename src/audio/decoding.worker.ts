@@ -36,17 +36,48 @@ self.onmessage = async (e: MessageEvent) => {
     try {
       await initDecoders();
 
+      let peaks = new Float32Array();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let leftChannel: any = new Float32Array();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let rightChannel: any = new Float32Array();
+      let duration = 0;
+      let bufferLength = 0;
+
+      let trackSampleRate = 44100;
+
       if (fileType === 'audio/flac' || fileType === 'flac') {
-        await decodeFlac(buffer, ringBuffer);
+        const { l, r, p, d, bl, sr } = await decodeFlac(buffer);
+        leftChannel = l; rightChannel = r; peaks = p; duration = d; bufferLength = bl; trackSampleRate = sr;
       } else if (fileType === 'audio/mpeg' || fileType === 'audio/mp3' || fileType === 'mp3') {
-        await decodeMp3(buffer, ringBuffer);
+        const { l, r, p, d, bl, sr } = await decodeMp3(buffer);
+        leftChannel = l; rightChannel = r; peaks = p; duration = d; bufferLength = bl; trackSampleRate = sr;
       } else if (fileType === 'audio/wav' || fileType === 'wav') {
-        decodeWav(buffer, ringBuffer);
+        const { l, r, p, d, bl, sr } = decodeWav(buffer);
+        leftChannel = l; rightChannel = r; peaks = p; duration = d; bufferLength = bl; trackSampleRate = sr;
       } else {
         throw new Error(`Unsupported file type: ${fileType}`);
       }
 
-      self.postMessage({ type: 'DECODE_DONE' });
+      if (sharedBuffer) {
+        // We decoded the arrays. We must now stream them to the ring buffer
+        const streamState = {
+          buffers: [leftChannel, rightChannel],
+          ringBuffer,
+          offset: 0,
+          shouldStop: false
+        };
+        // Use a unique ID or generate one? Wait, DECODE needs deckId to manage streams!
+        // AudioEngine sends deckId!
+        const deckId = payload.deckId;
+        if (streams.has(deckId)) streams.get(deckId).shouldStop = true;
+        streams.set(deckId, streamState);
+        pushInterleavedAsyncStateful(deckId);
+        
+        self.postMessage({ type: 'DECODE_DONE', peaks, duration, bufferLength, trackSampleRate }, [peaks.buffer]);
+      } else {
+        self.postMessage({ type: 'DECODE_DONE', peaks, duration, bufferLength, leftChannel, rightChannel, trackSampleRate }, [peaks.buffer, leftChannel.buffer, rightChannel.buffer]);
+      }
     } catch (err) {
       self.postMessage({ type: 'DECODE_ERROR', error: String(err) });
     }
@@ -129,25 +160,72 @@ function pushInterleavedAsyncStateful(deckId: string) {
   pushNextChunk();
 }
 
-async function decodeFlac(buffer: ArrayBuffer, ringBuffer: SharedRingBuffer) {
+async function decodeFlac(buffer: ArrayBuffer) {
   if (!flacDecoder) throw new Error("FLAC decoder not initialized");
   
   const uint8Array = new Uint8Array(buffer);
   const result = await flacDecoder.decode(uint8Array);
+
+  const { p, d, bl } = generatePeaksAndMetadata(result.channelData, result.sampleRate);
   
-  pushInterleaved(result.channelData, ringBuffer);
+  return {
+    l: result.channelData[0],
+    r: result.channelData.length > 1 ? result.channelData[1] : result.channelData[0],
+    p, d, bl,
+    sr: result.sampleRate
+  };
 }
 
-async function decodeMp3(buffer: ArrayBuffer, ringBuffer: SharedRingBuffer) {
+async function decodeMp3(buffer: ArrayBuffer) {
   if (!mp3Decoder) throw new Error("MP3 decoder not initialized");
   
   const uint8Array = new Uint8Array(buffer);
   const result = await mp3Decoder.decode(uint8Array);
+
+  const { p, d, bl } = generatePeaksAndMetadata(result.channelData, result.sampleRate);
   
-  pushInterleaved(result.channelData, ringBuffer);
+  return {
+    l: result.channelData[0],
+    r: result.channelData.length > 1 ? result.channelData[1] : result.channelData[0],
+    p, d, bl,
+    sr: result.sampleRate
+  };
 }
 
-function decodeWav(buffer: ArrayBuffer, ringBuffer: SharedRingBuffer) {
+function generatePeaksAndMetadata(channelData: Float32Array[], sampleRate: number) {
+  const leftChannel = channelData[0];
+  const numPeaks = 1000;
+  const blockSize = Math.floor(leftChannel.length / numPeaks);
+  const peaks = new Float32Array(numPeaks);
+  
+  for (let i = 0; i < numPeaks; i++) {
+    let sum = 0;
+    const start = i * blockSize;
+    const end = Math.min(start + blockSize, leftChannel.length);
+    for (let j = start; j < end; j++) {
+      sum += Math.abs(leftChannel[j]);
+    }
+    peaks[i] = sum / (end - start);
+  }
+  
+  let max = 0;
+  for (let i = 0; i < numPeaks; i++) {
+    if (peaks[i] > max) max = peaks[i];
+  }
+  if (max > 0) {
+    for (let i = 0; i < numPeaks; i++) {
+      peaks[i] = peaks[i] / max;
+    }
+  }
+
+  return {
+    p: peaks,
+    d: leftChannel.length / sampleRate,
+    bl: leftChannel.length
+  };
+}
+
+function decodeWav(buffer: ArrayBuffer) {
   const dataView = new DataView(buffer);
   
   let offset = 0;
@@ -159,6 +237,8 @@ function decodeWav(buffer: ArrayBuffer, ringBuffer: SharedRingBuffer) {
   offset += 4;
 
   let bitDepth = 16;
+  let sampleRate = 44100;
+  let numChannels = 2;
   let dataOffset = 0;
   let dataSize = 0;
 
@@ -169,7 +249,8 @@ function decodeWav(buffer: ArrayBuffer, ringBuffer: SharedRingBuffer) {
     offset += 4;
 
     if (chunkId === 0x666D7420) { // 'fmt '
-      // numChannels = dataView.getUint16(offset + 2, true);
+      numChannels = dataView.getUint16(offset + 2, true);
+      sampleRate = dataView.getUint32(offset + 4, true);
       bitDepth = dataView.getUint16(offset + 14, true);
     } else if (chunkId === 0x64617461) { // 'data'
       dataOffset = offset;
@@ -182,72 +263,55 @@ function decodeWav(buffer: ArrayBuffer, ringBuffer: SharedRingBuffer) {
   if (dataOffset === 0) throw new Error("No data chunk found in WAV");
 
   const numSamples = dataSize / (bitDepth / 8);
-  const floats = new Float32Array(numSamples);
+  const frames = numSamples / numChannels;
+  
+  const leftChannel = new Float32Array(frames);
+  const rightChannel = new Float32Array(frames);
 
   if (bitDepth === 16) {
-    for (let i = 0; i < numSamples; i++) {
-      const int16 = dataView.getInt16(dataOffset + i * 2, true);
-      floats[i] = int16 < 0 ? int16 / 32768 : int16 / 32767;
+    for (let i = 0; i < frames; i++) {
+      for (let c = 0; c < numChannels; c++) {
+        const int16 = dataView.getInt16(dataOffset + (i * numChannels + c) * 2, true);
+        const val = int16 < 0 ? int16 / 32768 : int16 / 32767;
+        if (c === 0) leftChannel[i] = val;
+        else if (c === 1) rightChannel[i] = val;
+      }
     }
   } else if (bitDepth === 24) {
-    for (let i = 0; i < numSamples; i++) {
-      const b0 = dataView.getUint8(dataOffset + i * 3);
-      const b1 = dataView.getUint8(dataOffset + i * 3 + 1);
-      const b2 = dataView.getInt8(dataOffset + i * 3 + 2);
-      const int24 = (b2 << 16) | (b1 << 8) | b0;
-      floats[i] = int24 / 8388608.0;
+    for (let i = 0; i < frames; i++) {
+      for (let c = 0; c < numChannels; c++) {
+        const b0 = dataView.getUint8(dataOffset + (i * numChannels + c) * 3);
+        const b1 = dataView.getUint8(dataOffset + (i * numChannels + c) * 3 + 1);
+        const b2 = dataView.getInt8(dataOffset + (i * numChannels + c) * 3 + 2);
+        const int24 = (b2 << 16) | (b1 << 8) | b0;
+        const val = int24 / 8388608.0;
+        if (c === 0) leftChannel[i] = val;
+        else if (c === 1) rightChannel[i] = val;
+      }
     }
   } else if (bitDepth === 32) {
-    for (let i = 0; i < numSamples; i++) {
-      const int32 = dataView.getInt32(dataOffset + i * 4, true);
-      floats[i] = int32 / 2147483648.0;
+    for (let i = 0; i < frames; i++) {
+      for (let c = 0; c < numChannels; c++) {
+        const int32 = dataView.getInt32(dataOffset + (i * numChannels + c) * 4, true);
+        const val = int32 / 2147483648.0;
+        if (c === 0) leftChannel[i] = val;
+        else if (c === 1) rightChannel[i] = val;
+      }
     }
   } else {
     throw new Error(`Unsupported WAV bit depth: ${bitDepth}`);
   }
-
-  pushToRingBufferBlocking(floats, ringBuffer);
-}
-
-// function replaced by stateful version
-
-function pushInterleaved(channelData: Float32Array[], ringBuffer: SharedRingBuffer) {
-  const numChannels = channelData.length;
-  const numSamplesPerChannel = channelData[0].length;
-  const interleaved = new Float32Array(numSamplesPerChannel * numChannels);
-
-  for (let c = 0; c < numChannels; c++) {
-    const channel = channelData[c];
-    for (let i = 0; i < numSamplesPerChannel; i++) {
-      interleaved[i * numChannels + c] = channel[i];
-    }
+  
+  if (numChannels === 1) {
+     for (let i = 0; i < frames; i++) rightChannel[i] = leftChannel[i];
   }
 
-  pushToRingBufferBlocking(interleaved, ringBuffer);
-}
+  const { p, d, bl } = generatePeaksAndMetadata([leftChannel, rightChannel], sampleRate);
 
-function pushToRingBufferBlocking(data: Float32Array, ringBuffer: SharedRingBuffer) {
-  let offset = 0;
-  const chunkSize = 4096;
-
-  while (offset < data.length) {
-    const end = Math.min(offset + chunkSize, data.length);
-    const chunk = data.subarray(offset, end);
-    
-    let written = 0;
-    while (written === 0) {
-      written = ringBuffer.push(chunk);
-      if (written === 0) {
-        // Yield or busy wait
-        // In a true implementation, Atomics.wait should be used to sleep the worker
-        // if the buffer is full, preventing CPU spin.
-      }
-    }
-    
-    offset += written;
-    
-    if (written < chunk.length) {
-       offset -= (chunk.length - written);
-    }
-  }
+  return {
+    l: leftChannel,
+    r: rightChannel,
+    p, d, bl,
+    sr: sampleRate
+  };
 }
