@@ -70,6 +70,8 @@ Vici is a high-performance, web-based dual-deck DJ auto-mixing application. Buil
 
 Vici is built with a decoupled architecture where the React UI, Zustand state, Dexie database, and file management system operate independently from the audio engine. The audio engine has been completely migrated to a custom C++ / FAUST DSP architecture compiled to WebAssembly. This replaces the legacy Tone.js implementation, pushing expensive polyphase resampling, analog SVF filters, and feedback delay networks entirely into the `AudioWorklet` processor. This renders the audio pipeline maximally resistant to UI thread latency and ensures mastering-grade playback quality without aliasing.
 
+For a deep dive into the mathematical integrity and phase alignment of the audio engine (including the Linkwitz-Riley crossovers, Sinc Polyphase Resampler, and Multi-Stage Lookahead Limiter), please read the [Signal Analysis & DSP Architecture](SIGNAL-ANALYSIS.md) document.
+
 ## License
 
 This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
