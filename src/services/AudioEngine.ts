@@ -301,7 +301,7 @@ export class AudioEngine {
   public decodingWorker: Worker | null = null;
 
   private constructor() {
-    this.context = new (window.AudioContext || (window as any).webkitAudioContext)();
+    this.context = new (window.AudioContext || (window as any).webkitAudioContext)({ latencyHint: 'interactive' });
     this.masterGainNode = this.context.createGain();
     this.masterGainNode.connect(this.context.destination);
     this.deckA = new Deck('A', this.masterGainNode);

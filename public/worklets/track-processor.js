@@ -21,6 +21,8 @@ class TrackProcessor extends AudioWorkletProcessor {
     this.outputPtr = null;
     this.inputCapacity = 0;
     this.outputCapacity = 0;
+    this.inputHeap = null;
+    this.outputHeap = null;
 
     this.port.onmessage = async (e) => {
       if (e.data.type === 'INIT_WASM') {
@@ -59,17 +61,30 @@ class TrackProcessor extends AudioWorkletProcessor {
 
   ensureWasmBuffers(inputFrames, outputFrames) {
     if (!this.wasmModule) return false;
+    let recreateInputHeap = false;
+    let recreateOutputHeap = false;
+
     const requiredInputBytes = inputFrames * 2 * 4; // 2 channels, 4 bytes per float
     if (!this.inputPtr || this.inputCapacity < requiredInputBytes) {
       if (this.inputPtr) this.wasmModule._free(this.inputPtr);
       this.inputPtr = this.wasmModule._malloc(requiredInputBytes);
       this.inputCapacity = requiredInputBytes;
+      recreateInputHeap = true;
     }
     const requiredOutputBytes = outputFrames * 2 * 4;
     if (!this.outputPtr || this.outputCapacity < requiredOutputBytes) {
       if (this.outputPtr) this.wasmModule._free(this.outputPtr);
       this.outputPtr = this.wasmModule._malloc(requiredOutputBytes);
       this.outputCapacity = requiredOutputBytes;
+      recreateOutputHeap = true;
+    }
+
+    const memoryBuffer = this.wasmModule.wasmMemory.buffer;
+    if (recreateInputHeap || !this.inputHeap || this.inputHeap.buffer !== memoryBuffer) {
+      this.inputHeap = new Float32Array(memoryBuffer, this.inputPtr, this.inputCapacity / 4);
+    }
+    if (recreateOutputHeap || !this.outputHeap || this.outputHeap.buffer !== memoryBuffer) {
+      this.outputHeap = new Float32Array(memoryBuffer, this.outputPtr, this.outputCapacity / 4);
     }
     return true;
   }
@@ -120,21 +135,18 @@ class TrackProcessor extends AudioWorkletProcessor {
 
       this.ensureWasmBuffers(inputFrames, outputFrames);
 
-      const memoryBuffer = this.wasmModule.wasmMemory.buffer;
-      const inputHeap = new Float32Array(memoryBuffer, this.inputPtr, inputFrames * 2);
       for (let i = 0; i < inputFrames; i++) {
         const idx = Math.floor(this.playhead) + i;
-        inputHeap[i * 2] = this.buffers[0][idx];
-        inputHeap[i * 2 + 1] = this.buffers[1][idx];
+        this.inputHeap[i * 2] = this.buffers[0][idx];
+        this.inputHeap[i * 2 + 1] = this.buffers[1][idx];
       }
 
       // pitch is 1.0 (no pitch shift), speed is ratio (tempo stretch)
       const generated = this.bungee.process_audio(this.inputPtr, inputFrames, this.outputPtr, outputFrames, ratio, 1.0);
 
-      const outputHeap = new Float32Array(memoryBuffer, this.outputPtr, generated * 2);
       for (let i = 0; i < generated; i++) {
-        if (channelCount > 0) output[0][i] = outputHeap[i * 2];
-        if (channelCount > 1) output[1][i] = outputHeap[i * 2 + 1];
+        if (channelCount > 0) output[0][i] = this.outputHeap[i * 2];
+        if (channelCount > 1) output[1][i] = this.outputHeap[i * 2 + 1];
       }
       for (let i = generated; i < outputFrames; i++) {
         if (channelCount > 0) output[0][i] = 0;
@@ -152,28 +164,24 @@ class TrackProcessor extends AudioWorkletProcessor {
 
       this.ensureWasmBuffers(inputFramesNeeded, outputFrames);
 
-      const memoryBuffer = this.wasmModule.wasmMemory.buffer;
-      const inputHeap = new Float32Array(memoryBuffer, this.inputPtr, inputFramesNeeded * 2);
-      
       let startIdx = Math.floor(this.playhead) - CROSSINGS;
 
       for (let i = 0; i < inputFramesNeeded; i++) {
         const idx = startIdx + i;
         if (idx >= 0 && idx < bufferLength) {
-          inputHeap[i * 2] = this.buffers[0][idx];
-          inputHeap[i * 2 + 1] = this.buffers[1][idx];
+          this.inputHeap[i * 2] = this.buffers[0][idx];
+          this.inputHeap[i * 2 + 1] = this.buffers[1][idx];
         } else {
-          inputHeap[i * 2] = 0;
-          inputHeap[i * 2 + 1] = 0;
+          this.inputHeap[i * 2] = 0;
+          this.inputHeap[i * 2 + 1] = 0;
         }
       }
 
       const consumed = this.resampler.process_audio_simd(this.inputPtr, inputFramesNeeded, this.outputPtr, outputFrames, ratio);
 
-      const outputHeap = new Float32Array(memoryBuffer, this.outputPtr, outputFrames * 2);
       for (let i = 0; i < outputFrames; i++) {
-        if (channelCount > 0) output[0][i] = outputHeap[i * 2];
-        if (channelCount > 1) output[1][i] = outputHeap[i * 2 + 1];
+        if (channelCount > 0) output[0][i] = this.outputHeap[i * 2];
+        if (channelCount > 1) output[1][i] = this.outputHeap[i * 2 + 1];
       }
 
       this.playhead = Math.floor(this.playhead) + consumed;
