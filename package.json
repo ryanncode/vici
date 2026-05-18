@@ -13,6 +13,7 @@
   "dependencies": {
     "@grame/faustwasm": "^0.16.1",
     "@wasm-audio-decoders/flac": "^0.2.10",
+    "coi-serviceworker": "^0.1.7",
     "dexie": "^4.4.2",
     "dexie-react-hooks": "^4.4.0",
     "lucide-react": "^1.16.0",
