@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { TrackSegment } from '../types/mixer';
 import { metadataScanner } from './MetadataScanner';
+import { SharedRingBuffer } from '../audio/SharedRingBuffer';
 
 import { FaustMonoDspGenerator } from '@grame/faustwasm';
 
@@ -58,6 +59,13 @@ export class Deck {
       this.trackNode.port.onmessage = (e) => {
         if (e.data.type === 'TIME_UPDATE') {
           this.currentTime = e.data.value;
+        } else if (e.data.type === 'SEEK_STREAM') {
+          if (AudioEngine.getInstance().decodingWorker) {
+            AudioEngine.getInstance().decodingWorker!.postMessage({
+              type: 'SEEK_STREAM',
+              payload: { deckId: this.id, frame: e.data.frame }
+            });
+          }
         }
       };
 
@@ -134,25 +142,63 @@ export class Deck {
       // Yield before large array copy
       await new Promise(resolve => setTimeout(resolve, 15));
 
+      // Generate peaks FIRST so waveforms load regardless of streaming setup success
+      await this.generatePeaks(audioBuffer);
+
       // Explicitly copy the arrays to guarantee they survive postMessage cloning
       const clonedLeft = new Float32Array(leftChannel);
       const clonedRight = new Float32Array(rightChannel);
+      const bufferLength = clonedLeft.length;
 
       // Yield to main thread to prevent UI freezing before sending to worklet
       await new Promise(resolve => setTimeout(resolve, 15));
 
-      // 4. Send memory pointers / buffers to Worklet
-      if (this.trackNode) {
-        this.trackNode.port.postMessage({
-          type: 'LOAD_TRACK',
-          buffers: [clonedLeft, clonedRight]
-        }, [clonedLeft.buffer, clonedRight.buffer]);
+      // Feature detection for cross-origin isolation and SharedArrayBuffer
+      const hasSharedArrayBuffer = typeof SharedArrayBuffer !== 'undefined' && globalThis.crossOriginIsolated;
+
+      if (hasSharedArrayBuffer) {
+        // 4. Setup SharedRingBuffer for streaming
+        const capacity = 131072; // ~1.5s at 44.1kHz, 2 channels interleaved
+        const ringBuffer = new SharedRingBuffer(capacity);
+        const sharedBuffer = ringBuffer.getSharedBuffer();
+
+        // Send to background worker to stream
+        if (AudioEngine.getInstance().decodingWorker) {
+          AudioEngine.getInstance().decodingWorker!.postMessage({
+            type: 'STREAM_DECODED',
+            payload: {
+              deckId: this.id,
+              buffers: [clonedLeft, clonedRight],
+              sharedBuffer,
+              capacity
+            }
+          }, [clonedLeft.buffer, clonedRight.buffer]);
+        }
+
+        // Send memory pointers / buffers to Worklet
+        if (this.trackNode) {
+          this.trackNode.port.postMessage({
+            type: 'LOAD_TRACK',
+            sharedBuffer,
+            capacity,
+            bufferLength
+          });
+        }
+      } else {
+        console.warn("SharedArrayBuffer not supported (missing COOP/COEP). Falling back to full buffer transfer.");
+        // Send full buffer directly to worklet
+        if (this.trackNode) {
+          this.trackNode.port.postMessage({
+            type: 'LOAD_TRACK_FULL',
+            leftChannel: clonedLeft,
+            rightChannel: clonedRight,
+            bufferLength
+          }, [clonedLeft.buffer, clonedRight.buffer]);
+        }
       }
 
       // Yield again
       await new Promise(resolve => setTimeout(resolve, 10));
-
-      await this.generatePeaks(audioBuffer);
     } catch (err) {
       console.error("Failed to load track:", err);
     }

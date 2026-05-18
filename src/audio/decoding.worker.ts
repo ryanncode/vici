@@ -17,6 +17,8 @@ async function initDecoders() {
   }
 }
 
+const streams = new Map<string, any>();
+
 self.onmessage = async (e: MessageEvent) => {
   const { type, payload } = e.data;
 
@@ -48,8 +50,84 @@ self.onmessage = async (e: MessageEvent) => {
     } catch (err) {
       self.postMessage({ type: 'DECODE_ERROR', error: String(err) });
     }
+  } else if (type === 'STREAM_DECODED') {
+    const { deckId, buffers, sharedBuffer, capacity } = payload;
+    const ringBuffer = new SharedRingBuffer(capacity, sharedBuffer);
+    
+    // Stop any existing stream for this deck
+    if (streams.has(deckId)) {
+      streams.get(deckId).shouldStop = true;
+    }
+    
+    const streamState = {
+      buffers,
+      ringBuffer,
+      offset: 0,
+      shouldStop: false
+    };
+    streams.set(deckId, streamState);
+    
+    pushInterleavedAsyncStateful(deckId);
+  } else if (type === 'SEEK_STREAM') {
+    const { deckId, frame } = payload;
+    const stream = streams.get(deckId);
+    if (stream && stream.buffers) {
+      const targetFrame = Math.floor(frame);
+      stream.offset = targetFrame * stream.buffers.length; // * numChannels
+      stream.ringBuffer.clear();
+      
+      if (stream.shouldStop) {
+        stream.shouldStop = false;
+        pushInterleavedAsyncStateful(deckId);
+      }
+    }
   }
 };
+
+function pushInterleavedAsyncStateful(deckId: string) {
+  const stream = streams.get(deckId);
+  if (!stream || !stream.buffers || !stream.ringBuffer) return;
+
+  const numChannels = stream.buffers.length;
+  const numSamplesPerChannel = stream.buffers[0].length;
+  
+  const chunkSize = 4096;
+  const chunk = new Float32Array(chunkSize);
+
+  function pushNextChunk() {
+    if (stream.shouldStop) return;
+    
+    if (stream.offset >= numSamplesPerChannel * numChannels) {
+      stream.shouldStop = true;
+      self.postMessage({ type: 'STREAM_DONE', deckId });
+      return;
+    }
+
+    const startOffset = stream.offset;
+    let samplesToWrite = 0;
+    
+    for (let i = 0; i < chunkSize; i += numChannels) {
+      const frameIndex = Math.floor((startOffset + i) / numChannels);
+      if (frameIndex >= numSamplesPerChannel) break;
+      
+      for (let c = 0; c < numChannels; c++) {
+        chunk[i + c] = stream.buffers[c][frameIndex];
+      }
+      samplesToWrite += numChannels;
+    }
+
+    const dataToPush = chunk.subarray(0, samplesToWrite);
+    const written = stream.ringBuffer.push(dataToPush);
+
+    if (written > 0) {
+      stream.offset += written;
+    }
+
+    setTimeout(pushNextChunk, written > 0 ? 0 : 5);
+  }
+
+  pushNextChunk();
+}
 
 async function decodeFlac(buffer: ArrayBuffer, ringBuffer: SharedRingBuffer) {
   if (!flacDecoder) throw new Error("FLAC decoder not initialized");
@@ -130,6 +208,8 @@ function decodeWav(buffer: ArrayBuffer, ringBuffer: SharedRingBuffer) {
 
   pushToRingBufferBlocking(floats, ringBuffer);
 }
+
+// function replaced by stateful version
 
 function pushInterleaved(channelData: Float32Array[], ringBuffer: SharedRingBuffer) {
   const numChannels = channelData.length;

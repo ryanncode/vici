@@ -11,26 +11,11 @@ import { db } from '../services/Database';
 export function useDeckControl(deckId: 'A' | 'B') {
   const setDeckState = useMixerStore(state => state.setDeckState);
   const lastStateUpdateRef = useRef<{ [key: string]: number }>({});
-  const dspThrottleRef = useRef<{ [key: string]: number }>({});
-  const dspTimeoutRef = useRef<{ [key: string]: ReturnType<typeof setTimeout> }>({});
-
-  const throttledDSP = (key: string, fn: () => void, delay = 32) => {
-    const now = Date.now();
-    const lastUpdate = dspThrottleRef.current[key] || 0;
-    
-    if (dspTimeoutRef.current[key]) {
-      clearTimeout(dspTimeoutRef.current[key]);
-    }
-
-    if (now - lastUpdate >= delay) {
-      fn();
-      dspThrottleRef.current[key] = now;
-    } else {
-      dspTimeoutRef.current[key] = setTimeout(() => {
-        fn();
-        dspThrottleRef.current[key] = Date.now();
-      }, delay);
-    }
+  // dspThrottleRef and dspTimeoutRef removed for latency optimization
+  const throttledDSP = (_key: string, fn: () => void, _delay = 0) => {
+    // We removed the 32ms throttle to achieve 10-millisecond latency benchmark targeted by Chrome M136
+    // Audio Worklet parameters are passed synchronously to avoid React render lifecycle delays.
+    fn();
   };
   
   const loadTrack = async (inputTrack: Track | TrackMetadata) => {

@@ -4,6 +4,46 @@ if (typeof URL === 'undefined') {
 
 import Module from './wasm/audio-processor.js';
 
+// SharedRingBuffer implementation for the worklet side (Consumer)
+class WorkletSharedRingBuffer {
+  constructor(capacity, sab) {
+    this.capacity = capacity;
+    this.sab = sab;
+    this.state = new Int32Array(sab, 0, 2);
+    this.buffer = new Float32Array(sab, 8, capacity);
+    this.WRITE_PTR = 0;
+    this.READ_PTR = 1;
+  }
+
+  getAvailableRead() {
+    const writePtr = Atomics.load(this.state, this.WRITE_PTR);
+    const readPtr = Atomics.load(this.state, this.READ_PTR);
+    return writePtr - readPtr;
+  }
+
+  pull(output) {
+    const writePtr = Atomics.load(this.state, this.WRITE_PTR);
+    const readPtr = Atomics.load(this.state, this.READ_PTR);
+
+    const available = writePtr - readPtr;
+    if (available <= 0) return 0;
+
+    const toRead = Math.min(output.length, available);
+    
+    const readIndex = readPtr % this.capacity;
+    const firstChunk = Math.min(toRead, this.capacity - readIndex);
+
+    output.set(this.buffer.subarray(readIndex, readIndex + firstChunk), 0);
+    
+    if (firstChunk < toRead) {
+      output.set(this.buffer.subarray(0, toRead - firstChunk), firstChunk);
+    }
+
+    Atomics.store(this.state, this.READ_PTR, readPtr + toRead);
+    return toRead;
+  }
+}
+
 class TrackProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -24,6 +64,14 @@ class TrackProcessor extends AudioWorkletProcessor {
     this.inputHeap = null;
     this.outputHeap = null;
 
+    this.bufferLength = 0;
+    this.ringBuffer = null;
+    this.localBuffer = null; // We maintain a local circular buffer for CROSSINGS and seeking
+    this.localCapacity = 131072;
+    this.expectedPullFrame = 0;
+    this.isStreaming = false;
+    this.fullBuffer = null;
+
     this.port.onmessage = async (e) => {
       if (e.data.type === 'INIT_WASM') {
         const wasmBinary = e.data.wasmBinary;
@@ -33,20 +81,36 @@ class TrackProcessor extends AudioWorkletProcessor {
         this.bungee = new this.wasmModule.BungeeStretcher(sampleRate);
         this.port.postMessage({ type: 'WASM_READY' });
       } else if (e.data.type === 'LOAD_TRACK') {
-        // Here we expect full Float32Arrays for the track data
-        this.buffers = e.data.buffers;
-        if (!this.buffers && e.data.buffer) {
-          this.buffers = [e.data.buffer, e.data.buffer];
-        }
+        this.isStreaming = true;
+        this.fullBuffer = null;
+        this.ringBuffer = new WorkletSharedRingBuffer(e.data.capacity, e.data.sharedBuffer);
+        this.bufferLength = e.data.bufferLength || 0;
+        this.localBuffer = new Float32Array(this.localCapacity * 2);
+        this.playhead = 0;
+        this.expectedPullFrame = 0;
+        if (this.bungee) this.bungee.reset();
+        console.log("TrackProcessor: LOAD_TRACK stream connected.");
+      } else if (e.data.type === 'LOAD_TRACK_FULL') {
+        this.isStreaming = false;
+        this.ringBuffer = null;
+        this.localBuffer = null;
+        this.fullBuffer = [e.data.leftChannel, e.data.rightChannel];
+        this.bufferLength = e.data.bufferLength || 0;
         this.playhead = 0;
         if (this.bungee) this.bungee.reset();
-        console.log("TrackProcessor: LOAD_TRACK received. Buffer length:", this.buffers && this.buffers[0] ? this.buffers[0].length : 'null');
+        console.log("TrackProcessor: LOAD_TRACK_FULL static buffer connected.");
       } else if (e.data.type === 'PLAY') {
         this.playing = true;
       } else if (e.data.type === 'STOP') {
         this.playing = false;
       } else if (e.data.type === 'SEEK') {
-        if (this.buffers) {
+        if (this.isStreaming && this.ringBuffer) {
+          this.playhead = e.data.value * sampleRate;
+          this.expectedPullFrame = this.playhead;
+          this.port.postMessage({ type: 'SEEK_STREAM', frame: this.playhead });
+          if (this.bungee) this.bungee.reset();
+          if (this.resampler) this.resampler.reset();
+        } else if (!this.isStreaming && this.fullBuffer) {
           this.playhead = e.data.value * sampleRate;
           if (this.bungee) this.bungee.reset();
           if (this.resampler) this.resampler.reset();
@@ -95,14 +159,14 @@ class TrackProcessor extends AudioWorkletProcessor {
     
     const channelCount = output.length;
     
-    if (!this.playing || !this.buffers || channelCount === 0 || (!this.resampler && !this.bungee)) {
+    if (!this.playing || (!this.isStreaming && !this.fullBuffer) || (this.isStreaming && !this.ringBuffer) || channelCount === 0 || (!this.resampler && !this.bungee)) {
       for (let channel = 0; channel < channelCount; channel++) {
         output[channel].fill(0);
       }
       return true;
     }
 
-    const bufferLength = this.buffers[0].length;
+    const bufferLength = this.bufferLength;
     const outputFrames = output[0].length;
     
     if (this.playhead >= bufferLength) {
@@ -113,21 +177,49 @@ class TrackProcessor extends AudioWorkletProcessor {
       return true;
     }
 
+    if (this.isStreaming) {
+      // Limit pulling so we don't overwrite localBuffer data that the playhead hasn't reached yet
+      const maxAhead = this.localCapacity - 8192; // keep safe margin
+      const framesAhead = this.expectedPullFrame - this.playhead;
+      
+      let maxPullFrames = 4096;
+      if (framesAhead + maxPullFrames > maxAhead) {
+        maxPullFrames = Math.max(0, Math.floor(maxAhead - framesAhead));
+      }
+      
+      if (maxPullFrames > 0) {
+        const tempBuffer = new Float32Array(maxPullFrames * 2); // stereo interleaved
+        const pulledSamples = this.ringBuffer.pull(tempBuffer);
+        const pulledFrames = pulledSamples / 2;
+        
+        for (let i = 0; i < pulledFrames; i++) {
+          const globalFrame = Math.floor(this.expectedPullFrame + i);
+          const idx = (globalFrame % this.localCapacity) * 2;
+          this.localBuffer[idx] = tempBuffer[i * 2];
+          this.localBuffer[idx + 1] = tempBuffer[i * 2 + 1];
+        }
+        this.expectedPullFrame += pulledFrames;
+      }
+    }
+
+    const getFrame = (idx) => {
+      idx = Math.floor(idx);
+      if (idx < 0 || idx >= bufferLength) return [0, 0];
+      if (this.isStreaming) {
+        if (idx < this.expectedPullFrame - this.localCapacity || idx >= this.expectedPullFrame) return [0, 0]; // underrun
+        const lidx = (idx % this.localCapacity) * 2;
+        return [this.localBuffer[lidx], this.localBuffer[lidx + 1]];
+      } else {
+        return [this.fullBuffer[0][idx], this.fullBuffer[1][idx]];
+      }
+    };
+
     // Determine how many input frames we need based on playback rate and key lock
     let ratio = Math.max(0.1, this.playbackRate);
     
     // We fetch a block of frames.
-    // If keyLock is ON, we use Bungee time-stretching (tempo changes without pitch change).
-    // If keyLock is OFF, we use standard Resampler (pitch and tempo change together).
-    
     if (this.keyLock && this.bungee) {
-      // Bungee logic: it stretches audio.
-      // We need to feed it some frames. For simplicity, we feed exactly what we think it might need.
-      // Actually, Bungee Stream handles its own buffering. We push interleaved data and pull interleaved data.
-      // The wrapper in C++ `process_audio` takes input frames and outputs processed frames.
-      // We pass the playhead to get input frames.
-      
-      const inputFramesNeeded = Math.ceil(outputFrames * ratio * 2); // A bit extra just in case
+      const inputFramesNeeded = Math.ceil(outputFrames * ratio * 2);
       let framesAvailable = Math.floor(bufferLength - this.playhead);
       const inputFrames = Math.min(inputFramesNeeded, framesAvailable);
       
@@ -137,11 +229,11 @@ class TrackProcessor extends AudioWorkletProcessor {
 
       for (let i = 0; i < inputFrames; i++) {
         const idx = Math.floor(this.playhead) + i;
-        this.inputHeap[i * 2] = this.buffers[0][idx];
-        this.inputHeap[i * 2 + 1] = this.buffers[1][idx];
+        const frame = getFrame(idx);
+        this.inputHeap[i * 2] = frame[0];
+        this.inputHeap[i * 2 + 1] = frame[1];
       }
 
-      // pitch is 1.0 (no pitch shift), speed is ratio (tempo stretch)
       const generated = this.bungee.process_audio(this.inputPtr, inputFrames, this.outputPtr, outputFrames, ratio, 1.0);
 
       for (let i = 0; i < generated; i++) {
@@ -153,9 +245,8 @@ class TrackProcessor extends AudioWorkletProcessor {
         if (channelCount > 1) output[1][i] = 0;
       }
 
-      this.playhead += inputFrames; // approximate advance
+      this.playhead += inputFrames;
     } else if (this.resampler) {
-      // Standard resampler
       const CROSSINGS = 32;
       const baseFrames = Math.ceil(outputFrames * ratio);
       const inputFramesNeeded = baseFrames + CROSSINGS * 2;
@@ -168,13 +259,9 @@ class TrackProcessor extends AudioWorkletProcessor {
 
       for (let i = 0; i < inputFramesNeeded; i++) {
         const idx = startIdx + i;
-        if (idx >= 0 && idx < bufferLength) {
-          this.inputHeap[i * 2] = this.buffers[0][idx];
-          this.inputHeap[i * 2 + 1] = this.buffers[1][idx];
-        } else {
-          this.inputHeap[i * 2] = 0;
-          this.inputHeap[i * 2 + 1] = 0;
-        }
+        const frame = getFrame(idx);
+        this.inputHeap[i * 2] = frame[0];
+        this.inputHeap[i * 2 + 1] = frame[1];
       }
 
       const consumed = this.resampler.process_audio_simd(this.inputPtr, inputFramesNeeded, this.outputPtr, outputFrames, ratio);
