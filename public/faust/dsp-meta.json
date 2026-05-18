@@ -15,7 +15,8 @@
         "/usr/share/faust/reverbs.lib",
         "/usr/share/faust/routes.lib",
         "/usr/share/faust/oscillators.lib",
-        "/usr/share/faust/envelopes.lib"
+        "/usr/share/faust/envelopes.lib",
+        "/usr/share/faust/compressors.lib"
     ],
     "include_pathnames": [
         "/faust/user/inc0",
@@ -24,11 +25,14 @@
         "/usr/share/faust",
         "."
     ],
-    "size": 17901996,
-    "code": "OCQrAlQ8Hw==",
+    "size": 17902056,
+    "code": "GMQ/AlQ8Hw==",
     "inputs": 2,
     "outputs": 2,
     "meta": [
+        {
+            "analyzers.lib/amp_follower_ar:author": "Jonatan Liljedahl, revised by Romain Michon"
+        },
         {
             "analyzers.lib/name": "Faust Analyzer Library"
         },
@@ -46,6 +50,39 @@
         },
         {
             "compile_options": "-lang wasm-i -fpga-mem-th 4 -ct 1 -es 1 -mcd 16 -mdd 1024 -mdy 33 -single -ftz 2"
+        },
+        {
+            "compressors.lib/compression_gain_mono:author": "Julius O. Smith III"
+        },
+        {
+            "compressors.lib/compression_gain_mono:copyright": "Copyright (C) 2014-2020 by Julius O. Smith III <jos@ccrma.stanford.edu>"
+        },
+        {
+            "compressors.lib/compression_gain_mono:license": "MIT-style STK-4.3 license"
+        },
+        {
+            "compressors.lib/compressor_lad_mono:author": "Julius O. Smith III"
+        },
+        {
+            "compressors.lib/compressor_lad_mono:copyright": "Copyright (C) 2014-2020 by Julius O. Smith III <jos@ccrma.stanford.edu>"
+        },
+        {
+            "compressors.lib/compressor_lad_mono:license": "MIT-style STK-4.3 license"
+        },
+        {
+            "compressors.lib/compressor_mono:author": "Julius O. Smith III"
+        },
+        {
+            "compressors.lib/compressor_mono:copyright": "Copyright (C) 2014-2020 by Julius O. Smith III <jos@ccrma.stanford.edu>"
+        },
+        {
+            "compressors.lib/compressor_mono:license": "MIT-style STK-4.3 license"
+        },
+        {
+            "compressors.lib/name": "Faust Compressor Effect Library"
+        },
+        {
+            "compressors.lib/version": "1.6.0"
         },
         {
             "delays.lib/name": "Faust Delay Library"
@@ -279,6 +316,12 @@
             "signals.lib/name": "Faust Signal Routing Library"
         },
         {
+            "signals.lib/onePoleSwitching:author": "Jonatan Liljedahl, revised by Dario Sanfilippo"
+        },
+        {
+            "signals.lib/onePoleSwitching:licence": "STK-4.3"
+        },
+        {
             "signals.lib/version": "1.6.0"
         }
     ],
@@ -333,6 +376,18 @@
                     "init": 0,
                     "min": -100,
                     "max": 100,
+                    "step": 1
+                },
+                {
+                    "type": "hslider",
+                    "label": "fx_compressor_on",
+                    "varname": "fHslider17",
+                    "shortname": "fx_compressor_on",
+                    "address": "/engine/fx_compressor_on",
+                    "index": 13707572,
+                    "init": 0,
+                    "min": 0,
+                    "max": 1,
                     "step": 1
                 },
                 {

@@ -110,9 +110,6 @@ export class Deck {
         this.trackNode.connect(this.outputNode);
       }
 
-      // Temp debug bypass
-      // this.trackNode.connect(this.outputNode);
-
     } catch (e) {
       console.warn("AudioWorklet not loaded, proceeding with dummy engine", e);
     }
@@ -335,14 +332,57 @@ export class AudioEngine {
   public deckA!: Deck;
   public deckB!: Deck;
   public masterGainNode!: GainNode;
+  public headroomGainNode!: GainNode;
+  public safetyClipperNode!: WaveShaperNode;
   private initialized: boolean = false;
   private initPromise: Promise<void> | null = null;
   public decodingWorker: Worker | null = null;
 
   private constructor() {
-    this.context = new (window.AudioContext || (window as any).webkitAudioContext)({ latencyHint: 'interactive' });
+    const savedRate = localStorage.getItem('vici_max_samplerate');
+    const maxRate = savedRate ? parseInt(savedRate) : 0;
+    
+    const savedHeadroom = localStorage.getItem('vici_headroom');
+    const headroomDb = savedHeadroom ? parseFloat(savedHeadroom) : -3.0; // Default -3dB
+    
+    const audioOptions: AudioContextOptions = { latencyHint: 'interactive' };
+    if (maxRate > 0) {
+      audioOptions.sampleRate = Math.min(maxRate, 96000);
+    }
+    
+    this.context = new (window.AudioContext || (window as any).webkitAudioContext)(audioOptions);
+    
+    // Master routing: masterGain (fader) -> headroomGain -> safetyClipper -> destination
     this.masterGainNode = this.context.createGain();
-    this.masterGainNode.connect(this.context.destination);
+    
+    this.headroomGainNode = this.context.createGain();
+    this.headroomGainNode.gain.value = Math.pow(10, headroomDb / 20); // Convert dB to linear gain
+
+    // Create Safety Clipper Curve
+    // Perfectly linear until +/- 0.98, then hard limits at 1.0 to prevent DAC wrapping/blowouts
+    this.safetyClipperNode = this.context.createWaveShaper();
+    const curveLength = 4096;
+    const curve = new Float32Array(curveLength);
+    for (let i = 0; i < curveLength; ++i) {
+      const x = (i * 2) / curveLength - 1; // -1 to 1
+      if (x < -0.98) {
+        curve[i] = -0.98 + (x + 0.98) * 0.2; // Softly round the very tip
+      } else if (x > 0.98) {
+        curve[i] = 0.98 + (x - 0.98) * 0.2;
+      } else {
+        curve[i] = x; // Linear pass-through
+      }
+      // Absolute hard-cap at -1.0 to 1.0
+      if (curve[i] > 1.0) curve[i] = 1.0;
+      if (curve[i] < -1.0) curve[i] = -1.0;
+    }
+    this.safetyClipperNode.curve = curve;
+    this.safetyClipperNode.oversample = 'none';
+
+    this.masterGainNode.connect(this.headroomGainNode);
+    this.headroomGainNode.connect(this.safetyClipperNode);
+    this.safetyClipperNode.connect(this.context.destination);
+    
     this.deckA = new Deck('A', this.masterGainNode);
     this.deckB = new Deck('B', this.masterGainNode);
   }

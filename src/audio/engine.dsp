@@ -185,4 +185,4 @@ with {
 };
 
 // --- Main Audio Graph ---
-process = eq : delay_fx : reverb_fx : phaser_fx : roll_fx : gate_fx : siren_fx : compressor_fx : dj_filter : *(volume), *(volume) : ma.tanh, ma.tanh;
+process = eq : delay_fx : reverb_fx : phaser_fx : roll_fx : gate_fx : siren_fx : compressor_fx : dj_filter : *(volume), *(volume);

@@ -1,6 +1,32 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 export const Hotkeys: React.FC = () => {
+  const [maxSampleRate, setMaxSampleRate] = useState<string>(() => localStorage.getItem('vici_max_samplerate') || '0');
+  const [headroom, setHeadroom] = useState<string>(() => localStorage.getItem('vici_headroom') || '-3');
+
+  const handleSampleRateChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    setMaxSampleRate(val);
+    if (val === '0') {
+      localStorage.removeItem('vici_max_samplerate');
+    } else {
+      localStorage.setItem('vici_max_samplerate', val);
+    }
+    // Need reload to take effect
+    if (confirm("Audio engine sample rate change requires a reload. Reload now?")) {
+      window.location.reload();
+    }
+  };
+
+  const handleHeadroomChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    setHeadroom(val);
+    localStorage.setItem('vici_headroom', val);
+    if (confirm("Audio engine headroom change requires a reload. Reload now?")) {
+      window.location.reload();
+    }
+  };
+
   return (
     <div className="w-full h-full bg-slate-100 dark:bg-slate-900 flex flex-col relative">
       {/* Header */}
@@ -17,14 +43,54 @@ export const Hotkeys: React.FC = () => {
             </svg>
           </div>
           <div>
-            <h2 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider">Hotkeys & MIDI</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Map keyboard strokes or external MIDI controllers</p>
+            <h2 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider">Settings & MIDI</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Configure engine and map hardware controllers</p>
           </div>
         </div>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
+        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-300 dark:border-slate-700 overflow-hidden shadow-sm">
+          <div className="bg-slate-50 dark:bg-slate-800/50 px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+            <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest">Audio Engine</h3>
+          </div>
+          <div className="p-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-700/50">
+            <div>
+              <div className="text-sm font-bold text-slate-700 dark:text-slate-300">Max Sample Rate</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">Cap the hardware WebAudio context sample rate to save CPU.</div>
+            </div>
+            <select 
+              value={maxSampleRate}
+              onChange={handleSampleRateChange}
+              className="bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded px-3 py-1.5 text-sm text-slate-700 dark:text-slate-300 outline-none"
+            >
+              <option value="0">Auto (Hardware Default)</option>
+              <option value="44100">44.1 kHz</option>
+              <option value="48000">48 kHz</option>
+              <option value="88200">88.2 kHz</option>
+              <option value="96000">96 kHz</option>
+            </select>
+          </div>
+          <div className="p-4 flex items-center justify-between">
+            <div>
+              <div className="text-sm font-bold text-slate-700 dark:text-slate-300">Master Headroom</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">Attenuate output before the Master Limiter to prevent pumping or distortion.</div>
+            </div>
+            <select 
+              value={headroom}
+              onChange={handleHeadroomChange}
+              className="bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded px-3 py-1.5 text-sm text-slate-700 dark:text-slate-300 outline-none"
+            >
+              <option value="0">0 dB (Loud)</option>
+              <option value="-1.5">-1.5 dB</option>
+              <option value="-3">-3.0 dB (Standard)</option>
+              <option value="-6">-6.0 dB</option>
+              <option value="-9">-9.0 dB (Safe)</option>
+            </select>
+          </div>
+        </div>
+
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-300 dark:border-slate-700 overflow-hidden shadow-sm">
           <div className="bg-slate-50 dark:bg-slate-800/50 px-4 py-3 border-b border-slate-200 dark:border-slate-700">
             <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest">Global Keyboard Shortcuts</h3>

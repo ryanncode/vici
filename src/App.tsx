@@ -218,13 +218,13 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Liquid Console Container (responsive scaling via exact transform matrix) */}
+      {/* Main Liquid Console Container (responsive scaling via native zoom) */}
       <div 
-        className="relative origin-center hidden md:flex flex-col shrink-0 gap-[10px]"
+        className="relative hidden md:flex flex-col shrink-0 gap-[10px]"
         style={{
           width: '1050px',
           height: '950px',
-          transform: `scale(${scale})`
+          zoom: scale
         }}
       >
         {/* Global Header Bar (1050x40px) */}
