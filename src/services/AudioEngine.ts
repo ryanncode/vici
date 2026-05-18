@@ -53,7 +53,8 @@ export class Deck {
       });
 
       // Load WASM processor module
-      const wasmResponse = await fetch('/worklets/wasm/audio-processor.wasm');
+      const basePath = import.meta.env.BASE_URL || '/';
+      const wasmResponse = await fetch(`${basePath}worklets/wasm/audio-processor.wasm`);
       const wasmBuffer = await wasmResponse.arrayBuffer();
       
       this.trackNode.port.postMessage({ type: 'INIT_WASM', wasmBinary: wasmBuffer });
@@ -75,8 +76,8 @@ export class Deck {
       const generator = new FaustMonoDspGenerator();
       
       // Fetch compiled wasm and metadata from public dir
-      const dspMeta = await (await fetch("/faust/dsp-meta.json")).json();
-      const dspModule = await WebAssembly.compileStreaming(await fetch("/faust/dsp-module.wasm"));
+      const dspMeta = await (await fetch(`${basePath}faust/dsp-meta.json`)).json();
+      const dspModule = await WebAssembly.compileStreaming(await fetch(`${basePath}faust/dsp-module.wasm`));
       
       this.faustNode = await generator.createNode(
         audioContext,
@@ -379,8 +380,9 @@ export class AudioEngine {
 
     this.initPromise = (async () => {
       // Load custom track processor
+      const basePath = import.meta.env.BASE_URL || '/';
       try {
-        await this.context.audioWorklet.addModule('/worklets/track-processor.js?v=' + Date.now(), { type: 'module' } as any);
+        await this.context.audioWorklet.addModule(`${basePath}worklets/track-processor.js?v=` + Date.now(), { type: 'module' } as any);
       } catch (e) {
         console.warn("Could not load track processor", e);
       }
