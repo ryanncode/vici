@@ -344,7 +344,7 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
         ctx.beginPath();
         for (let i = firstVisibleBeatIdx; ; i++) {
           const beatTime = i * beatInterval;
-          const x = Math.round((beatTime - timeAtLeftEdge) * pixelsPerSecond);
+          const x = (beatTime - timeAtLeftEdge) * pixelsPerSecond;
           
           if (x > width) break;
           
@@ -358,7 +358,7 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
 
       // Draw Intro Region (from start of track to intro marker)
       if (introMarker > 0) {
-        const x = Math.round((introMarker - timeAtLeftEdge) * pixelsPerSecond);
+        const x = (introMarker - timeAtLeftEdge) * pixelsPerSecond;
         if (x >= 0 && x <= width) {
           ctx.fillStyle = 'rgba(34, 197, 94, 0.15)'; // green-500
           ctx.fillRect(0, 0, x, height);
@@ -374,7 +374,7 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
       
       // Draw Outro Region (from outro marker to end of track)
       if (outroMarker > 0 && outroMarker < duration) {
-        const x = Math.round((outroMarker - timeAtLeftEdge) * pixelsPerSecond);
+        const x = (outroMarker - timeAtLeftEdge) * pixelsPerSecond;
         if (x >= 0 && x <= width) {
           ctx.fillStyle = 'rgba(239, 68, 68, 0.15)'; // red-500
           ctx.fillRect(x, 0, width - x, height);
@@ -410,7 +410,7 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
         ctx.fillStyle = colors.l;
         for (let i = startPeakIdx; i < endPeakIdx; i++) {
           const peakTime = i / peaksPerSecond;
-          const x = Math.round((peakTime - timeAtLeftEdge) * pixelsPerSecond);
+          const x = (peakTime - timeAtLeftEdge) * pixelsPerSecond;
           const val = bandPeaks[i*3];
           const h = Math.round(Math.max(1, val * height * 0.9));
           const y = Math.floor((height - h) / 2);
@@ -421,7 +421,7 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
         ctx.fillStyle = colors.m;
         for (let i = startPeakIdx; i < endPeakIdx; i++) {
           const peakTime = i / peaksPerSecond;
-          const x = Math.round((peakTime - timeAtLeftEdge) * pixelsPerSecond);
+          const x = (peakTime - timeAtLeftEdge) * pixelsPerSecond;
           const val = bandPeaks[i*3+1];
           const h = Math.round(Math.max(1, val * height * 0.9));
           const y = Math.floor((height - h) / 2);
@@ -432,7 +432,7 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
         ctx.fillStyle = colors.h;
         for (let i = startPeakIdx; i < endPeakIdx; i++) {
           const peakTime = i / peaksPerSecond;
-          const x = Math.round((peakTime - timeAtLeftEdge) * pixelsPerSecond);
+          const x = (peakTime - timeAtLeftEdge) * pixelsPerSecond;
           const val = bandPeaks[i*3+2];
           const h = Math.round(Math.max(1, val * height * 0.9));
           const y = Math.floor((height - h) / 2);
@@ -452,7 +452,7 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
 
         for (let i = startPeakIdx; i < endPeakIdx; i++) {
           const peakTime = i / peaksPerSecond;
-          const x = Math.round((peakTime - timeAtLeftEdge) * pixelsPerSecond);
+          const x = (peakTime - timeAtLeftEdge) * pixelsPerSecond;
           
           const peak = peaks[i];
           const h = Math.round(Math.max(1, peak * height * 0.9));

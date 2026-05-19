@@ -22,6 +22,8 @@ export class Deck {
   public crossfadeGain: number = 1.0;
   public trackGainDb: number = 0;
   public currentTime: number = 0;
+  public isPlaying: boolean = false;
+  private lastTimeUpdateReal: number = 0;
   
   private _duration: number = 0;
   private _loaded: boolean = false;
@@ -61,6 +63,7 @@ export class Deck {
       this.trackNode.port.onmessage = (e) => {
         if (e.data.type === 'TIME_UPDATE') {
           this.currentTime = e.data.value;
+          this.lastTimeUpdateReal = performance.now();
         } else if (e.data.type === 'SEEK_STREAM') {
           if (AudioEngine.getInstance().decodingWorker) {
             AudioEngine.getInstance().decodingWorker!.postMessage({
@@ -212,22 +215,37 @@ export class Deck {
 
   public play(): void {
     if (this.trackNode) {
+      this.isPlaying = true;
+      this.lastTimeUpdateReal = performance.now();
       this.trackNode.port.postMessage({ type: 'PLAY' });
     }
   }
 
   public stop(): void {
     if (this.trackNode) {
+      this.isPlaying = false;
       this.trackNode.port.postMessage({ type: 'STOP' });
     }
   }
 
   public getCurrentTime(): number {
+    if (this.isPlaying && this.currentBpm > 0) {
+      const now = performance.now();
+      const elapsedSec = (now - this.lastTimeUpdateReal) / 1000;
+      
+      // Limit extrapolation to 100ms. If we haven't received a TIME_UPDATE in 100ms, 
+      // something is wrong (worklet starving) so we shouldn't keep running forward.
+      if (elapsedSec < 0.1) {
+        const pitch = this.currentBpm / this.originalBpm;
+        return Math.min(this._duration, this.currentTime + (elapsedSec * pitch));
+      }
+    }
     return this.currentTime;
   }
 
   public seek(time: number): void {
     this.currentTime = time;
+    this.lastTimeUpdateReal = performance.now();
     if (this.trackNode) {
       this.trackNode.port.postMessage({ type: 'SEEK', value: time });
     }
