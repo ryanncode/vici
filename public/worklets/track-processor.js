@@ -286,7 +286,8 @@ class TrackProcessor extends AudioWorkletProcessor {
     }
 
     this.framesSinceLastReport += outputFrames;
-    if (this.framesSinceLastReport >= sampleRate / 30) {
+    // Report playhead position at ~120Hz for buttery smooth UI rendering
+    if (this.framesSinceLastReport >= sampleRate / 120) {
       this.port.postMessage({ type: 'TIME_UPDATE', value: this.playhead / this.trackSampleRate });
       this.framesSinceLastReport = 0;
     }

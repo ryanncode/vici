@@ -229,7 +229,7 @@ const OverviewWaveform: React.FC<WaveformProps> = React.memo(({
       {/* Micro-playhead for the overview */}
       <div 
         ref={overlayRef}
-        className="absolute top-0 bottom-0 left-0 bg-slate-950/40 pointer-events-none mix-blend-overlay border-r-[2px] border-white/50 shadow-[1px_0_4px_rgba(0,0,0,0.5)]"
+        className="absolute top-0 bottom-0 left-0 bg-slate-900/5 dark:bg-slate-950/40 pointer-events-none mix-blend-overlay border-r-[2px] border-[#dce3ec] dark:border-slate-500/70 z-20"
         style={{ width: '0%' }}
       />
       
@@ -344,7 +344,7 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
         ctx.beginPath();
         for (let i = firstVisibleBeatIdx; ; i++) {
           const beatTime = i * beatInterval;
-          const x = (beatTime - timeAtLeftEdge) * pixelsPerSecond;
+          const x = Math.round((beatTime - timeAtLeftEdge) * pixelsPerSecond);
           
           if (x > width) break;
           
@@ -358,7 +358,7 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
 
       // Draw Intro Region (from start of track to intro marker)
       if (introMarker > 0) {
-        const x = (introMarker - timeAtLeftEdge) * pixelsPerSecond;
+        const x = Math.round((introMarker - timeAtLeftEdge) * pixelsPerSecond);
         if (x >= 0 && x <= width) {
           ctx.fillStyle = 'rgba(34, 197, 94, 0.15)'; // green-500
           ctx.fillRect(0, 0, x, height);
@@ -374,7 +374,7 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
       
       // Draw Outro Region (from outro marker to end of track)
       if (outroMarker > 0 && outroMarker < duration) {
-        const x = (outroMarker - timeAtLeftEdge) * pixelsPerSecond;
+        const x = Math.round((outroMarker - timeAtLeftEdge) * pixelsPerSecond);
         if (x >= 0 && x <= width) {
           ctx.fillStyle = 'rgba(239, 68, 68, 0.15)'; // red-500
           ctx.fillRect(x, 0, width - x, height);
@@ -410,33 +410,33 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
         ctx.fillStyle = colors.l;
         for (let i = startPeakIdx; i < endPeakIdx; i++) {
           const peakTime = i / peaksPerSecond;
-          const x = (peakTime - timeAtLeftEdge) * pixelsPerSecond;
+          const x = Math.round((peakTime - timeAtLeftEdge) * pixelsPerSecond);
           const val = bandPeaks[i*3];
-          const h = Math.max(1, val * height * 0.9);
-          const y = (height - h) / 2;
-          ctx.fillRect(x, y, 1.0, h);
+          const h = Math.round(Math.max(1, val * height * 0.9));
+          const y = Math.floor((height - h) / 2);
+          ctx.fillRect(x, y, 1, h);
         }
 
         // Mid Band (Midrange)
         ctx.fillStyle = colors.m;
         for (let i = startPeakIdx; i < endPeakIdx; i++) {
           const peakTime = i / peaksPerSecond;
-          const x = (peakTime - timeAtLeftEdge) * pixelsPerSecond;
+          const x = Math.round((peakTime - timeAtLeftEdge) * pixelsPerSecond);
           const val = bandPeaks[i*3+1];
-          const h = Math.max(1, val * height * 0.9);
-          const y = (height - h) / 2;
-          ctx.fillRect(x, y, 1.0, h);
+          const h = Math.round(Math.max(1, val * height * 0.9));
+          const y = Math.floor((height - h) / 2);
+          ctx.fillRect(x, y, 1, h);
         }
 
         // High Band (Treble)
         ctx.fillStyle = colors.h;
         for (let i = startPeakIdx; i < endPeakIdx; i++) {
           const peakTime = i / peaksPerSecond;
-          const x = (peakTime - timeAtLeftEdge) * pixelsPerSecond;
+          const x = Math.round((peakTime - timeAtLeftEdge) * pixelsPerSecond);
           const val = bandPeaks[i*3+2];
-          const h = Math.max(1, val * height * 0.9);
-          const y = (height - h) / 2;
-          ctx.fillRect(x, y, 1.0, h);
+          const h = Math.round(Math.max(1, val * height * 0.9));
+          const y = Math.floor((height - h) / 2);
+          ctx.fillRect(x, y, 1, h);
         }
 
         // Reset composite operation and alpha to source-over so playheads and markers draw normally
@@ -452,14 +452,14 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
 
         for (let i = startPeakIdx; i < endPeakIdx; i++) {
           const peakTime = i / peaksPerSecond;
-          const x = (peakTime - timeAtLeftEdge) * pixelsPerSecond;
+          const x = Math.round((peakTime - timeAtLeftEdge) * pixelsPerSecond);
           
           const peak = peaks[i];
-          const h = Math.max(1, peak * height * 0.9);
-          const y = (height - h) / 2;
+          const h = Math.round(Math.max(1, peak * height * 0.9));
+          const y = Math.floor((height - h) / 2);
           
           // Ensure we draw at least 1px wide lines for visibility
-          ctx.fillRect(x, y, 1.5, h);
+          ctx.fillRect(x, y, 2, h);
         }
       }
 
@@ -571,7 +571,7 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
 
       {/* Static Central Playhead */}
       <div 
-        className="absolute top-0 bottom-0 w-[2px] bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)] z-20 pointer-events-none"
+        className="absolute top-0 bottom-0 w-[2px] bg-[#dce3ec] dark:bg-slate-500/70 z-20 pointer-events-none"
         style={{ left: '50%', transform: 'translateX(-50%)' }}
       />
     </div>
