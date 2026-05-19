@@ -336,7 +336,7 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
         const beatInterval = 60 / bpm; // seconds per beat
         
         ctx.strokeStyle = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)'; // Lower contrast
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 2;
         
         // Find the first beat time that is visible on the left edge
         const firstVisibleBeatIdx = Math.floor(timeAtLeftEdge / beatInterval);
@@ -414,7 +414,7 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
           const val = bandPeaks[i*3];
           const h = Math.round(Math.max(1, val * height * 0.9));
           const y = Math.floor((height - h) / 2);
-          ctx.fillRect(x, y, 1, h);
+          ctx.fillRect(x, y, 1.5, h);
         }
 
         // Mid Band (Midrange)
@@ -425,7 +425,7 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
           const val = bandPeaks[i*3+1];
           const h = Math.round(Math.max(1, val * height * 0.9));
           const y = Math.floor((height - h) / 2);
-          ctx.fillRect(x, y, 1, h);
+          ctx.fillRect(x, y, 1.5, h);
         }
 
         // High Band (Treble)
@@ -436,7 +436,7 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
           const val = bandPeaks[i*3+2];
           const h = Math.round(Math.max(1, val * height * 0.9));
           const y = Math.floor((height - h) / 2);
-          ctx.fillRect(x, y, 1, h);
+          ctx.fillRect(x, y, 1.5, h);
         }
 
         // Reset composite operation and alpha to source-over so playheads and markers draw normally
