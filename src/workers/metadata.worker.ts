@@ -204,6 +204,61 @@ self.onmessage = async (e: MessageEvent<{ type?: string, jobId: string, file?: F
         }
       }
 
+      // Generate 3-band peaks for coloring (Low, Mid, High interleaved)
+      let bandPeaks = new Float32Array(0);
+      if (!isPrecomputedPeaks) {
+        const numPeaks = 1000;
+        const blockSize = Math.floor(audioData.length / numPeaks);
+        bandPeaks = new Float32Array(numPeaks * 3);
+        
+        let lp_y = 0;
+        let hp_y = 0;
+        let hp_x = 0;
+        
+        const fs = 44100; // Assume 44.1kHz for roughly accurate cutoff
+        // Lowpass Alpha for 250Hz
+        const alpha_low = 1 / (1 + fs / (2 * Math.PI * 250));
+        // Highpass Alpha for 2.5kHz (Note: formula is 1 / (1 + 2pi*fc/fs))
+        const alpha_high = 1 / (1 + (2 * Math.PI * 2500) / fs);
+        
+        let maxL = 0, maxM = 0, maxH = 0;
+        
+        for (let i = 0; i < numPeaks; i++) {
+          let sumL = 0, sumM = 0, sumH = 0;
+          const start = i * blockSize;
+          const end = start + blockSize;
+          
+          for (let j = start; j < end; j++) {
+            const sample = audioData[j];
+            lp_y += alpha_low * (sample - lp_y);
+            hp_y = alpha_high * (hp_y + sample - hp_x);
+            hp_x = sample;
+            
+            const mid = sample - lp_y - hp_y;
+            
+            sumL += Math.abs(lp_y);
+            sumM += Math.abs(mid);
+            sumH += Math.abs(hp_y);
+          }
+          
+          bandPeaks[i*3] = sumL / blockSize;
+          bandPeaks[i*3 + 1] = sumM / blockSize;
+          bandPeaks[i*3 + 2] = sumH / blockSize;
+          
+          if (bandPeaks[i*3] > maxL) maxL = bandPeaks[i*3];
+          if (bandPeaks[i*3+1] > maxM) maxM = bandPeaks[i*3+1];
+          if (bandPeaks[i*3+2] > maxH) maxH = bandPeaks[i*3+2];
+        }
+        
+        if (maxL > 0 || maxM > 0 || maxH > 0) {
+          for (let i = 0; i < numPeaks; i++) {
+            bandPeaks[i*3] /= (maxL || 1);
+            bandPeaks[i*3+1] /= (maxM || 1);
+            bandPeaks[i*3+2] /= (maxH || 1);
+          }
+        }
+      }
+
       const segments = analyzeSegmentsLogic(peaks, duration, bpm || 120);
       
       // Simulate CENS and MFCC extraction for high-speed novelty/structural detection
@@ -234,7 +289,7 @@ self.onmessage = async (e: MessageEvent<{ type?: string, jobId: string, file?: F
         console.warn('OfflineAudioContext not available in worker for MFCC/CENS extraction', e);
       }
       
-      self.postMessage({ jobId, success: true, peaks, segments, mfccs, cens }, [mfccs.buffer, cens.buffer]);
+      self.postMessage({ jobId, success: true, peaks, bandPeaks, segments, mfccs, cens }, [mfccs.buffer, cens.buffer]);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       self.postMessage({ jobId, success: false, error: errorMessage });

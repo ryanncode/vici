@@ -13,6 +13,7 @@ export class Deck {
   public currentBpm: number = 120;
   
   public peaks: Float32Array | null = null;
+  public bandPeaks: Float32Array | null = null;
   public segments: TrackSegment[] = [];
   public mfccs?: Float32Array;
   public cens?: Float32Array;
@@ -130,7 +131,7 @@ export class Deck {
       const sharedBuffer = ringBuffer ? ringBuffer.getSharedBuffer() : null;
 
       // 2. Decode in background worker to completely bypass main thread memory allocation
-      const workerResponse = await new Promise<{ peaks: Float32Array, duration: number, bufferLength: number, trackSampleRate: number, leftChannel?: Float32Array, rightChannel?: Float32Array }>((resolve, reject) => {
+      const workerResponse = await new Promise<{ peaks: Float32Array, bandPeaks?: Float32Array, duration: number, bufferLength: number, trackSampleRate: number, leftChannel?: Float32Array, rightChannel?: Float32Array }>((resolve, reject) => {
         if (!AudioEngine.getInstance().decodingWorker) return reject("No decoding worker available");
         
         const worker = AudioEngine.getInstance().decodingWorker!;
@@ -162,7 +163,7 @@ export class Deck {
       });
 
       // 3. Generate metadata from precomputed peaks
-      await this.generatePeaks(workerResponse.peaks, workerResponse.duration);
+      await this.generatePeaks(workerResponse.peaks, workerResponse.duration, workerResponse.bandPeaks);
       this._duration = workerResponse.duration;
       this._loaded = true;
 
@@ -196,10 +197,11 @@ export class Deck {
     }
   }
 
-  private async generatePeaks(peaksOrAudio: Float32Array, duration: number) {
+  private async generatePeaks(peaksOrAudio: Float32Array, duration: number, precomputedBandPeaks?: Float32Array) {
     try {
       const result = await metadataScanner.analyzeWaveform(peaksOrAudio, duration, this.originalBpm, true);
       this.peaks = result.peaks;
+      this.bandPeaks = precomputedBandPeaks || result.bandPeaks || null;
       this.segments = result.segments;
       this.mfccs = result.mfccs;
       this.cens = result.cens;

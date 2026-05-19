@@ -38,6 +38,7 @@ self.onmessage = async (e: MessageEvent) => {
       await initDecoders();
 
       let peaks = new Float32Array();
+      let bandPeaks = new Float32Array();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let leftChannel: any = new Float32Array();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -48,14 +49,14 @@ self.onmessage = async (e: MessageEvent) => {
       let trackSampleRate = 44100;
 
       if (fileType === 'audio/flac' || fileType === 'flac') {
-        const { l, r, p, d, bl, sr } = await decodeFlac(buffer);
-        leftChannel = l; rightChannel = r; peaks = p; duration = d; bufferLength = bl; trackSampleRate = sr;
+        const { l, r, p, bp, d, bl, sr } = await decodeFlac(buffer);
+        leftChannel = l; rightChannel = r; peaks = p; bandPeaks = bp; duration = d; bufferLength = bl; trackSampleRate = sr;
       } else if (fileType === 'audio/mpeg' || fileType === 'audio/mp3' || fileType === 'mp3') {
-        const { l, r, p, d, bl, sr } = await decodeMp3(buffer);
-        leftChannel = l; rightChannel = r; peaks = p; duration = d; bufferLength = bl; trackSampleRate = sr;
+        const { l, r, p, bp, d, bl, sr } = await decodeMp3(buffer);
+        leftChannel = l; rightChannel = r; peaks = p; bandPeaks = bp; duration = d; bufferLength = bl; trackSampleRate = sr;
       } else if (fileType === 'audio/wav' || fileType === 'wav') {
-        const { l, r, p, d, bl, sr } = decodeWav(buffer);
-        leftChannel = l; rightChannel = r; peaks = p; duration = d; bufferLength = bl; trackSampleRate = sr;
+        const { l, r, p, bp, d, bl, sr } = decodeWav(buffer);
+        leftChannel = l; rightChannel = r; peaks = p; bandPeaks = bp; duration = d; bufferLength = bl; trackSampleRate = sr;
       } else {
         throw new Error(`Unsupported file type: ${fileType}`);
       }
@@ -75,12 +76,12 @@ self.onmessage = async (e: MessageEvent) => {
         streams.set(deckId, streamState);
         pushInterleavedAsyncStateful(deckId);
         
-        self.postMessage({ type: 'DECODE_DONE', deckId, peaks, duration, bufferLength, trackSampleRate }, [peaks.buffer]);
+        self.postMessage({ type: 'DECODE_DONE', deckId, peaks, bandPeaks, duration, bufferLength, trackSampleRate }, [peaks.buffer, bandPeaks.buffer]);
       } else {
         const deckId = payload.deckId;
         const leftClone = leftChannel.slice();
         const rightClone = rightChannel.slice();
-        self.postMessage({ type: 'DECODE_DONE', deckId, peaks, duration, bufferLength, leftChannel: leftClone, rightChannel: rightClone, trackSampleRate }, [peaks.buffer, leftClone.buffer, rightClone.buffer]);
+        self.postMessage({ type: 'DECODE_DONE', deckId, peaks, bandPeaks, duration, bufferLength, leftChannel: leftClone, rightChannel: rightClone, trackSampleRate }, [peaks.buffer, bandPeaks.buffer, leftClone.buffer, rightClone.buffer]);
       }
     } catch (err) {
       self.postMessage({ type: 'DECODE_ERROR', deckId: payload.deckId, error: String(err) });
@@ -170,12 +171,12 @@ async function decodeFlac(buffer: ArrayBuffer) {
   const uint8Array = new Uint8Array(buffer);
   const result = await flacDecoder.decode(uint8Array);
 
-  const { p, d, bl } = generatePeaksAndMetadata(result.channelData, result.sampleRate);
+  const { p, bp, d, bl } = generatePeaksAndMetadata(result.channelData, result.sampleRate);
   
   return {
     l: result.channelData[0],
     r: result.channelData.length > 1 ? result.channelData[1] : result.channelData[0],
-    p, d, bl,
+    p, bp, d, bl,
     sr: result.sampleRate
   };
 }
@@ -186,12 +187,12 @@ async function decodeMp3(buffer: ArrayBuffer) {
   const uint8Array = new Uint8Array(buffer);
   const result = await mp3Decoder.decode(uint8Array);
 
-  const { p, d, bl } = generatePeaksAndMetadata(result.channelData, result.sampleRate);
+  const { p, bp, d, bl } = generatePeaksAndMetadata(result.channelData, result.sampleRate);
   
   return {
     l: result.channelData[0],
     r: result.channelData.length > 1 ? result.channelData[1] : result.channelData[0],
-    p, d, bl,
+    p, bp, d, bl,
     sr: result.sampleRate
   };
 }
@@ -201,15 +202,48 @@ function generatePeaksAndMetadata(channelData: Float32Array[], sampleRate: numbe
   const numPeaks = 1000;
   const blockSize = Math.floor(leftChannel.length / numPeaks);
   const peaks = new Float32Array(numPeaks);
+  const bandPeaks = new Float32Array(numPeaks * 3);
+  
+  const fs = sampleRate || 44100;
+  // Lowpass Alpha for 250Hz
+  const alpha_low = 1 / (1 + fs / (2 * Math.PI * 250));
+  // Highpass Alpha for 2.5kHz (Note: formula is 1 / (1 + 2pi*fc/fs))
+  const alpha_high = 1 / (1 + (2 * Math.PI * 2500) / fs);
+  
+  let lp_y = 0;
+  let hp_y = 0;
+  let hp_x = 0;
+  let maxL = 0, maxM = 0, maxH = 0;
   
   for (let i = 0; i < numPeaks; i++) {
     let sum = 0;
+    let sumL = 0, sumM = 0, sumH = 0;
+    
     const start = i * blockSize;
     const end = Math.min(start + blockSize, leftChannel.length);
     for (let j = start; j < end; j++) {
-      sum += Math.abs(leftChannel[j]);
+      const sample = leftChannel[j];
+      sum += Math.abs(sample);
+      
+      lp_y += alpha_low * (sample - lp_y);
+      hp_y = alpha_high * (hp_y + sample - hp_x);
+      hp_x = sample;
+      
+      const mid = sample - lp_y - hp_y;
+      
+      sumL += Math.abs(lp_y);
+      sumM += Math.abs(mid);
+      sumH += Math.abs(hp_y);
     }
     peaks[i] = sum / (end - start);
+    
+    bandPeaks[i*3] = sumL / (end - start);
+    bandPeaks[i*3 + 1] = sumM / (end - start);
+    bandPeaks[i*3 + 2] = sumH / (end - start);
+    
+    if (bandPeaks[i*3] > maxL) maxL = bandPeaks[i*3];
+    if (bandPeaks[i*3+1] > maxM) maxM = bandPeaks[i*3+1];
+    if (bandPeaks[i*3+2] > maxH) maxH = bandPeaks[i*3+2];
   }
   
   let max = 0;
@@ -221,9 +255,18 @@ function generatePeaksAndMetadata(channelData: Float32Array[], sampleRate: numbe
       peaks[i] = peaks[i] / max;
     }
   }
+  
+  if (maxL > 0 || maxM > 0 || maxH > 0) {
+    for (let i = 0; i < numPeaks; i++) {
+      bandPeaks[i*3] /= (maxL || 1);
+      bandPeaks[i*3+1] /= (maxM || 1);
+      bandPeaks[i*3+2] /= (maxH || 1);
+    }
+  }
 
   return {
     p: peaks,
+    bp: bandPeaks,
     d: leftChannel.length / sampleRate,
     bl: leftChannel.length
   };
@@ -310,12 +353,12 @@ function decodeWav(buffer: ArrayBuffer) {
      for (let i = 0; i < frames; i++) rightChannel[i] = leftChannel[i];
   }
 
-  const { p, d, bl } = generatePeaksAndMetadata([leftChannel, rightChannel], sampleRate);
+  const { p, bp, d, bl } = generatePeaksAndMetadata([leftChannel, rightChannel], sampleRate);
 
   return {
     l: leftChannel,
     r: rightChannel,
-    p, d, bl,
+    p, bp, d, bl,
     sr: sampleRate
   };
 }

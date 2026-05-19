@@ -36,6 +36,7 @@ export interface DeckState {
   introMarker: number;
   outroMarker: number;
   peaks: Float32Array | null;
+  bandPeaks: Float32Array | null;
   segments: TrackSegment[];
   hotCues: number[];
   activeLoop: { start: number; end: number } | null;
@@ -72,6 +73,7 @@ const initialDeckState: DeckState = {
   introMarker: 0,
   outroMarker: 0,
   peaks: null,
+  bandPeaks: null,
   segments: [],
   hotCues: [],
   activeLoop: null,

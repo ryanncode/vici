@@ -4,6 +4,7 @@ import type { FileSystemFileHandle } from './FileManager';
 
 export interface WaveformAnalysisResult {
   peaks: Float32Array;
+  bandPeaks?: Float32Array;
   segments: import('../types/mixer').TrackSegment[];
   mfccs?: Float32Array;
   cens?: Float32Array;
@@ -45,7 +46,7 @@ class MetadataScanner {
   }
 
   private async handleWorkerMessage(e: MessageEvent) {
-    const { jobId, success, metadata, peaks, segments, mfccs, cens, error } = e.data;
+    const { jobId, success, metadata, peaks, bandPeaks, segments, mfccs, cens, error } = e.data;
     const job = this.activeJobs.get(jobId);
     
     if (job) {
@@ -54,7 +55,7 @@ class MetadataScanner {
       
       if (success) {
         if (job.type === 'analyze_waveform') {
-          job.resolve({ peaks, segments, mfccs, cens } as unknown as TrackMetadata & WaveformAnalysisResult);
+          job.resolve({ peaks, bandPeaks, segments, mfccs, cens } as unknown as TrackMetadata & WaveformAnalysisResult);
         } else if (metadata) {
           try {
             // Save to IndexedDB

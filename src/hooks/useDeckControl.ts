@@ -109,6 +109,7 @@ export function useDeckControl(deckId: 'A' | 'B') {
         track,
         status: 'ready',
         peaks: track.waveformPeaks || deckEngine.peaks,
+        bandPeaks: track.bandPeaks || deckEngine.bandPeaks,
         segments,
         introMarker: intro,
         outroMarker: outro,

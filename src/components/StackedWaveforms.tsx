@@ -6,6 +6,7 @@ import type { TrackSegment } from '../types/mixer';
 interface WaveformProps {
   deckId: 'A' | 'B';
   peaks: Float32Array | null;
+  bandPeaks?: Float32Array | null;
   segments?: TrackSegment[];
   introMarker: number;
   outroMarker: number;
@@ -17,7 +18,6 @@ interface WaveformProps {
 const OverviewWaveform: React.FC<WaveformProps> = React.memo(({
   deckId,
   peaks,
-  segments,
   introMarker,
   outroMarker,
   color,
@@ -29,6 +29,15 @@ const OverviewWaveform: React.FC<WaveformProps> = React.memo(({
   const overlayRef = useRef<HTMLDivElement>(null);
   const [draggingMarker, setDraggingMarker] = useState<'intro' | 'outro' | 'playhead' | null>(null);
   const [dragTime, setDragTime] = useState<number | null>(null);
+  const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setIsDark(document.documentElement.classList.contains('dark'));
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
 
   const getDuration = () => {
     const engine = AudioEngine.getInstance();
@@ -40,7 +49,6 @@ const OverviewWaveform: React.FC<WaveformProps> = React.memo(({
     const canvas = canvasRef.current;
     if (!canvas || !peaks || peaks.length === 0) return;
 
-    const duration = getDuration();
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
@@ -55,34 +63,46 @@ const OverviewWaveform: React.FC<WaveformProps> = React.memo(({
 
     ctx.clearRect(0, 0, width, height);
 
-    if (segments && segments.length > 0 && duration > 0) {
-      for (const segment of segments) {
-        const startX = (segment.start / duration) * width;
-        const endX = (segment.end / duration) * width;
-        const segmentWidth = endX - startX;
-        
-        ctx.fillStyle = `${segment.color}33`; 
-        ctx.fillRect(startX, 0, segmentWidth, height);
-      }
-    }
-
     const step = width / peaks.length;
-    
-    const gradient = ctx.createLinearGradient(0, 0, 0, height);
-    gradient.addColorStop(0, `${color}80`);
-    gradient.addColorStop(0.5, color);
-    gradient.addColorStop(1, `${color}80`);
 
-    ctx.fillStyle = gradient;
+    // The overview is a compressed 20px strip. We use a monochromatic style 
+    // based on the deck's primary brand color.
+    
+    // Convert hex color to rgba for low opacity
+    const hexToRgb = (hex: string) => {
+      const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+      return result ? {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16)
+      } : { r: 255, g: 255, b: 255 };
+    };
+    
+    const rgb = hexToRgb(color);
+    
+    let fillR = rgb.r;
+    let fillG = rgb.g;
+    let fillB = rgb.b;
+    
+    // The user specifically noted that Deck B's Cyan (#06b6d4) was too bright in Light Mode.
+    // Deck A's Blue (#3b82f6) was perfect. We gently darken just Deck B here.
+    if (!isDark && deckId === 'B') {
+      fillR = Math.floor(rgb.r * 0.75);
+      fillG = Math.floor(rgb.g * 0.75);
+      fillB = Math.floor(rgb.b * 0.75);
+    }
+    
+    const opacity = isDark ? 0.3 : 0.4;
+    ctx.fillStyle = `rgba(${fillR}, ${fillG}, ${fillB}, ${opacity})`;
 
     for (let i = 0; i < peaks.length; i++) {
       const peak = peaks[i];
-      const h = Math.max(1, peak * height);
+      const h_px = Math.max(1, peak * height);
       const x = i * step;
-      const y = (height - h) / 2;
-      ctx.fillRect(x, y, Math.max(1, step - 0.5), h);
+      const y = (height - h_px) / 2;
+      ctx.fillRect(x, y, Math.max(1, step - 0.5), h_px);
     }
-  }, [peaks, segments, color, deckId]);
+  }, [peaks, color, deckId, isDark]);
 
   const onSeekRef = useRef(onSeek);
   const onMarkerChangeRef = useRef(onMarkerChange);
@@ -233,6 +253,7 @@ interface ZoomWaveformProps extends WaveformProps {
 const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
   deckId,
   peaks,
+  bandPeaks,
   segments,
   introMarker,
   outroMarker,
@@ -248,6 +269,15 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
   const [scrubStartX, setScrubStartX] = useState<number>(0);
   const [scrubStartTime, setScrubStartTime] = useState<number>(0);
   const zoomTimeWindow = 10; // Show 10 seconds of audio on screen
+  const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setIsDark(document.documentElement.classList.contains('dark'));
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
 
   const getDuration = () => {
     const engine = AudioEngine.getInstance();
@@ -289,6 +319,13 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
 
       ctx.clearRect(0, 0, width, height);
 
+      // Light mode 'multiply' blending requires a solid white background 
+      // instead of a transparent canvas, otherwise the subtraction fails.
+      if (!isDark) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+      }
+
       // We are showing `zoomTimeWindow` seconds across the full `width`.
       // The center of the canvas is `currentTime`.
       const pixelsPerSecond = width / zoomTimeWindow;
@@ -298,7 +335,7 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
       if (bpm && bpm > 0) {
         const beatInterval = 60 / bpm; // seconds per beat
         
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+        ctx.strokeStyle = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)'; // Lower contrast
         ctx.lineWidth = 1;
         
         // Find the first beat time that is visible on the left edge
@@ -319,35 +356,35 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
         ctx.stroke();
       }
 
-      // Draw Intro Marker
-      if (introMarker >= 0) {
+      // Draw Intro Region (from start of track to intro marker)
+      if (introMarker > 0) {
         const x = (introMarker - timeAtLeftEdge) * pixelsPerSecond;
         if (x >= 0 && x <= width) {
-          ctx.fillStyle = 'rgba(34, 197, 94, 0.5)'; // green-500
-          ctx.fillRect(x, 0, width - x, height);
+          ctx.fillStyle = 'rgba(34, 197, 94, 0.15)'; // green-500
+          ctx.fillRect(0, 0, x, height);
           
           ctx.fillStyle = '#22c55e';
           ctx.fillRect(x, 0, 2, height);
-        } else if (x < 0 && introMarker > 0) {
-          // If marker is way off left, the rest of the clip is active, but we only highlight from marker onwards
-          // Wait, if intro marker is on left, then the right side of it is active.
-          ctx.fillStyle = 'rgba(34, 197, 94, 0.5)';
+        } else if (x > width) {
+          // If marker is off right edge, entire view is inside intro region
+          ctx.fillStyle = 'rgba(34, 197, 94, 0.15)';
           ctx.fillRect(0, 0, width, height);
         }
       }
       
-      // Draw Outro Marker
-      if (outroMarker > 0 && outroMarker <= duration) {
+      // Draw Outro Region (from outro marker to end of track)
+      if (outroMarker > 0 && outroMarker < duration) {
         const x = (outroMarker - timeAtLeftEdge) * pixelsPerSecond;
         if (x >= 0 && x <= width) {
-          ctx.fillStyle = 'rgba(239, 68, 68, 0.5)'; // red-500
-          ctx.fillRect(0, 0, x, height);
+          ctx.fillStyle = 'rgba(239, 68, 68, 0.15)'; // red-500
+          ctx.fillRect(x, 0, width - x, height);
           
           ctx.fillStyle = '#ef4444';
           ctx.fillRect(x, 0, 2, height);
-        } else if (x > width) {
-           ctx.fillStyle = 'rgba(239, 68, 68, 0.5)'; 
-           ctx.fillRect(0, 0, width, height);
+        } else if (x < 0) {
+          // If marker is off left edge, entire view is inside outro region
+          ctx.fillStyle = 'rgba(239, 68, 68, 0.15)';
+          ctx.fillRect(0, 0, width, height);
         }
       }
 
@@ -356,22 +393,74 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
       const startPeakIdx = Math.max(0, Math.floor(timeAtLeftEdge * peaksPerSecond));
       const endPeakIdx = Math.min(peaks.length, Math.ceil((currentTime + (zoomTimeWindow / 2)) * peaksPerSecond));
       
-      const gradient = ctx.createLinearGradient(0, 0, 0, height);
-      gradient.addColorStop(0, `${color}99`);
-      gradient.addColorStop(0.5, color);
-      gradient.addColorStop(1, `${color}99`);
-      ctx.fillStyle = gradient;
+      if (bandPeaks && bandPeaks.length === peaks.length * 3) {
+        // 3-Band Coloration Mode via Canvas Compositing
+        ctx.globalCompositeOperation = isDark ? 'lighter' : 'multiply';
+        
+        const colors = isDark 
+          ? { l: '#3b82f6', m: '#a855f7', h: '#22c55e' } // Blue, Purple, Green
+          : { l: '#1d4ed8', m: '#7e22ce', h: '#15803d' }; // Deep Blue, Deep Purple, Deep Green
 
-      for (let i = startPeakIdx; i < endPeakIdx; i++) {
-        const peakTime = i / peaksPerSecond;
-        const x = (peakTime - timeAtLeftEdge) * pixelsPerSecond;
-        
-        const peak = peaks[i];
-        const h = Math.max(1, peak * height * 0.9);
-        const y = (height - h) / 2;
-        
-        // Ensure we draw at least 1px wide lines for visibility
-        ctx.fillRect(x, y, 1.5, h);
+        // The rest of the UI uses opacity/alpha for active states (e.g., bg-blue-500/60).
+        // By setting globalAlpha here, we prevent the waveform from looking overwhelmingly 
+        // bright or high-contrast compared to the softer performance pads.
+        ctx.globalAlpha = 0.65;
+
+        // Low Band (Bass)
+        ctx.fillStyle = colors.l;
+        for (let i = startPeakIdx; i < endPeakIdx; i++) {
+          const peakTime = i / peaksPerSecond;
+          const x = (peakTime - timeAtLeftEdge) * pixelsPerSecond;
+          const val = bandPeaks[i*3];
+          const h = Math.max(1, val * height * 0.9);
+          const y = (height - h) / 2;
+          ctx.fillRect(x, y, 1.0, h);
+        }
+
+        // Mid Band (Midrange)
+        ctx.fillStyle = colors.m;
+        for (let i = startPeakIdx; i < endPeakIdx; i++) {
+          const peakTime = i / peaksPerSecond;
+          const x = (peakTime - timeAtLeftEdge) * pixelsPerSecond;
+          const val = bandPeaks[i*3+1];
+          const h = Math.max(1, val * height * 0.9);
+          const y = (height - h) / 2;
+          ctx.fillRect(x, y, 1.0, h);
+        }
+
+        // High Band (Treble)
+        ctx.fillStyle = colors.h;
+        for (let i = startPeakIdx; i < endPeakIdx; i++) {
+          const peakTime = i / peaksPerSecond;
+          const x = (peakTime - timeAtLeftEdge) * pixelsPerSecond;
+          const val = bandPeaks[i*3+2];
+          const h = Math.max(1, val * height * 0.9);
+          const y = (height - h) / 2;
+          ctx.fillRect(x, y, 1.0, h);
+        }
+
+        // Reset composite operation and alpha to source-over so playheads and markers draw normally
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1.0;
+      } else {
+        // Monochromatic Mode
+        const gradient = ctx.createLinearGradient(0, 0, 0, height);
+        gradient.addColorStop(0, `${color}99`);
+        gradient.addColorStop(0.5, color);
+        gradient.addColorStop(1, `${color}99`);
+        ctx.fillStyle = gradient;
+
+        for (let i = startPeakIdx; i < endPeakIdx; i++) {
+          const peakTime = i / peaksPerSecond;
+          const x = (peakTime - timeAtLeftEdge) * pixelsPerSecond;
+          
+          const peak = peaks[i];
+          const h = Math.max(1, peak * height * 0.9);
+          const y = (height - h) / 2;
+          
+          // Ensure we draw at least 1px wide lines for visibility
+          ctx.fillRect(x, y, 1.5, h);
+        }
       }
 
       animationFrameId = requestAnimationFrame(drawZoomedWaveform);
@@ -379,7 +468,7 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
 
     animationFrameId = requestAnimationFrame(drawZoomedWaveform);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [peaks, segments, color, deckId, zoomTimeWindow, bpm, introMarker, outroMarker]);
+  }, [peaks, segments, color, deckId, zoomTimeWindow, bpm, introMarker, outroMarker, bandPeaks, isDark]);
 
   const onMarkerChangeRef = useRef(onMarkerChange);
   useEffect(() => {
@@ -511,16 +600,15 @@ export const StackedWaveforms: React.FC = () => {
   }, []);
 
   return (
-    <div className="h-[160px] shrink-0 bg-slate-900 border-2 border-slate-700 rounded-2xl flex flex-col w-full relative overflow-hidden shadow-lg">
+    <div className="h-[160px] shrink-0 bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-700 rounded-2xl flex flex-col w-full relative overflow-hidden shadow-lg">
 
       {/* Deck A Overview (20px) */}
-      <div className="h-[20px] w-full bg-slate-950 flex relative border-b-2 border-slate-800 group cursor-pointer overflow-hidden">
+      <div className="h-[20px] w-full bg-slate-100 dark:bg-slate-950 flex relative border-b-2 border-slate-300 dark:border-slate-800 group cursor-pointer overflow-hidden">
         {deckA.track ? (
           <div className="absolute inset-0">
             <OverviewWaveform 
               deckId="A"
               peaks={deckA.peaks}
-              segments={deckA.segments}
               introMarker={deckA.introMarker}
               outroMarker={deckA.outroMarker}
               color="#3b82f6"
@@ -529,17 +617,18 @@ export const StackedWaveforms: React.FC = () => {
             />
           </div>
         ) : (
-          <div className="absolute inset-0 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(255,255,255,0.05)_10px,rgba(255,255,255,0.05)_20px)]"></div>
+          <div className="absolute inset-0 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(0,0,0,0.05)_10px,rgba(0,0,0,0.05)_20px)] dark:bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(255,255,255,0.05)_10px,rgba(255,255,255,0.05)_20px)]"></div>
         )}
       </div>
 
       {/* Deck A Zoom Grid (60px) */}
-      <div className="flex-1 h-[60px] w-full relative flex items-center border-b-[1px] border-slate-700 overflow-hidden bg-slate-900">
+      <div className="flex-1 h-[60px] w-full relative flex items-center border-b-[1px] border-slate-300 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-900">
         {deckA.track ? (
           <div className="w-full h-full relative">
             <ZoomWaveform 
               deckId="A"
               peaks={deckA.peaks}
+              bandPeaks={deckA.bandPeaks}
               segments={deckA.segments}
               introMarker={deckA.introMarker}
               outroMarker={deckA.outroMarker}
@@ -550,19 +639,20 @@ export const StackedWaveforms: React.FC = () => {
             />
           </div>
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-xs text-slate-600 font-mono tracking-widest">
+          <div className="w-full h-full flex items-center justify-center text-xs text-slate-400 dark:text-slate-600 font-mono tracking-widest">
             NO TRACK LOADED
           </div>
         )}
       </div>
 
       {/* Deck B Zoom Grid (60px) */}
-      <div className="flex-1 h-[60px] w-full relative flex items-center border-t-[1px] border-slate-700 overflow-hidden bg-slate-900">
+      <div className="flex-1 h-[60px] w-full relative flex items-center border-t-[1px] border-slate-300 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-900">
         {deckB.track ? (
           <div className="w-full h-full relative">
             <ZoomWaveform 
               deckId="B"
               peaks={deckB.peaks}
+              bandPeaks={deckB.bandPeaks}
               segments={deckB.segments}
               introMarker={deckB.introMarker}
               outroMarker={deckB.outroMarker}
@@ -573,20 +663,19 @@ export const StackedWaveforms: React.FC = () => {
             />
           </div>
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-xs text-slate-600 font-mono tracking-widest">
+          <div className="w-full h-full flex items-center justify-center text-xs text-slate-400 dark:text-slate-600 font-mono tracking-widest">
             NO TRACK LOADED
           </div>
         )}
       </div>
 
       {/* Deck B Overview (20px) */}
-      <div className="h-[20px] w-full bg-slate-950 flex relative border-t-2 border-slate-800 group cursor-pointer overflow-hidden">
+      <div className="h-[20px] w-full bg-slate-100 dark:bg-slate-950 flex relative border-t-2 border-slate-300 dark:border-slate-800 group cursor-pointer overflow-hidden">
         {deckB.track ? (
           <div className="absolute inset-0">
             <OverviewWaveform 
               deckId="B"
               peaks={deckB.peaks}
-              segments={deckB.segments}
               introMarker={deckB.introMarker}
               outroMarker={deckB.outroMarker}
               color="#06b6d4"
@@ -595,7 +684,7 @@ export const StackedWaveforms: React.FC = () => {
             />
           </div>
         ) : (
-          <div className="absolute inset-0 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(255,255,255,0.05)_10px,rgba(255,255,255,0.05)_20px)]"></div>
+          <div className="absolute inset-0 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(0,0,0,0.05)_10px,rgba(0,0,0,0.05)_20px)] dark:bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(255,255,255,0.05)_10px,rgba(255,255,255,0.05)_20px)]"></div>
         )}
       </div>
 
