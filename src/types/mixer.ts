@@ -66,5 +66,7 @@ export interface DeckState {
   duration: number;
   introMarker: number;
   outroMarker: number;
+  hotCues?: number[]; // Array of cue times in seconds
+  activeLoop?: { start: number; end: number } | null;
 }
 

@@ -37,6 +37,8 @@ export interface DeckState {
   outroMarker: number;
   peaks: Float32Array | null;
   segments: TrackSegment[];
+  hotCues: number[];
+  activeLoop: { start: number; end: number } | null;
 }
 
 const initialFxState: FxState = {
@@ -71,6 +73,8 @@ const initialDeckState: DeckState = {
   outroMarker: 0,
   peaks: null,
   segments: [],
+  hotCues: [],
+  activeLoop: null,
 };
 
 export interface MixerState {
