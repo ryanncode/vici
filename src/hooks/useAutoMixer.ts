@@ -17,6 +17,7 @@ export function useAutoMixer({ library, isAutomixEnabled, onTransitionStart, onT
   const workerRef = useRef<Worker | null>(null);
   const isTransitioning = useRef<boolean>(false);
   const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastMixNowTimeRef = useRef<number>(0);
 
   useEffect(() => {
     if (!isAutomixEnabled) {
@@ -65,13 +66,17 @@ export function useAutoMixer({ library, isAutomixEnabled, onTransitionStart, onT
       // Trigger transition logic if threshold breached
       const targetDeckState = activeDeck === 'A' ? deckBState : deckAState;
       const hasNextTrack = library.length > 0 || targetDeckState.track !== null;
+      const mixNowTime = useMixerStore.getState().mixNowTrigger;
+      
+      const shouldTriggerNow = mixNowTime > 0 && mixNowTime > lastMixNowTimeRef.current;
+      lastMixNowTimeRef.current = mixNowTime;
 
-      if (timePastOutro >= 0 && !isTransitioning.current && hasNextTrack) {
+      if ((timePastOutro >= 0 || shouldTriggerNow) && !isTransitioning.current && hasNextTrack && activeDeck) {
         isTransitioning.current = true;
         // Ensure fadeDuration is valid
         const safeFadeDuration = Math.max(1, fadeDuration);
         executeAutoTransition(activeDeck, safeFadeDuration);
-      } else if (isTransitioning.current && timePastOutro < 0 && activeDeck) {
+      } else if (isTransitioning.current && timePastOutro < 0 && activeDeck && !shouldTriggerNow) {
         // User scrubbed backward before the outro marker during a transition
         isTransitioning.current = false;
         if (transitionTimeoutRef.current) {

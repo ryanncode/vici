@@ -120,7 +120,7 @@ export class Deck {
     }
   }
 
-  public async loadTrack(url: string): Promise<void> {
+  public async loadTrack(url: string, fileTypeHint?: string): Promise<void> {
     try {
       // 1. Fetch file
       const response = await fetch(url);
@@ -151,7 +151,12 @@ export class Deck {
         worker.addEventListener('message', onMessage);
 
         const extMatch = url.match(/\.([a-z0-9]+)(?:\?.*)?$/i);
-        const derivedType = extMatch ? extMatch[1].toLowerCase() : 'mp3';
+        let derivedType = extMatch ? extMatch[1].toLowerCase() : 'mp3';
+        if (fileTypeHint) {
+          if (fileTypeHint.includes('flac')) derivedType = 'flac';
+          else if (fileTypeHint.includes('wav')) derivedType = 'wav';
+          else if (fileTypeHint.includes('mp3') || fileTypeHint.includes('mpeg')) derivedType = 'mp3';
+        }
 
         worker.postMessage({
           type: 'DECODE',

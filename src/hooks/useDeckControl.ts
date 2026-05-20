@@ -77,7 +77,12 @@ export function useDeckControl(deckId: 'A' | 'B') {
 
       await new Promise(r => setTimeout(r, 5)); // Yield before deck load
       const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
-      await deckEngine.loadTrack(trackUrl);
+      
+      // Reset playback state before loading the new track
+      deckEngine.stop();
+      setDeckState(deckId, { isPlaying: false });
+
+      await deckEngine.loadTrack(trackUrl, track.fileType);
       
       deckEngine.originalBpm = track.bpm;
       deckEngine.setTrackGainDb(track.replayGain || 0);

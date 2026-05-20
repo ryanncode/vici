@@ -94,6 +94,7 @@ export interface MixerState {
   isAutomixEnabled: boolean;
   automixBars: number;
   masterVolume: number;
+  mixNowTrigger: number;
   
   // Actions
   setDeckState: (deckId: 'A' | 'B', partial: Partial<DeckState>) => void;
@@ -103,6 +104,7 @@ export interface MixerState {
   setCrossfadeCurve: (curve: 'constant_power' | 'linear' | 'cut') => void;
   setMasterDeck: (deckId: 'A' | 'B' | null) => void;
   setIsAutomixEnabled: (enabled: boolean) => void;
+  setMixNowTrigger: () => void;
 }
 
 export const useMixerStore = create<MixerState>((set) => ({
@@ -114,6 +116,7 @@ export const useMixerStore = create<MixerState>((set) => ({
   isAutomixEnabled: false,
   automixBars: 4,
   masterVolume: 1.0,
+  mixNowTrigger: 0,
 
   setDeckState: (deckId, partial) =>
     set((state) => ({
@@ -159,4 +162,5 @@ export const useMixerStore = create<MixerState>((set) => ({
   setMasterDeck: (deckId) => set({ masterDeck: deckId }),
   setIsAutomixEnabled: (enabled) => set({ isAutomixEnabled: enabled }),
   setMasterVolume: (v: number) => set({ masterVolume: v }),
+  setMixNowTrigger: () => set({ mixNowTrigger: Date.now() }),
 }));

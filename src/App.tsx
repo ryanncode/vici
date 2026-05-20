@@ -24,7 +24,14 @@ export default function App() {
   });
 
   const [scale, setScale] = useState(1);
-  const [isDarkMode, setIsDarkMode] = useState(true);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const saved = localStorage.getItem('vici-theme-dark');
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('vici-theme-dark', JSON.stringify(isDarkMode));
+  }, [isDarkMode]);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -257,7 +264,13 @@ export default function App() {
               {new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' })}
             </div>
 
-            <div className="flex items-center gap-0 group">
+            <div className="flex items-center gap-2 group">
+              <button 
+                onClick={() => useMixerStore.getState().setMixNowTrigger()}
+                className="px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors border-2 bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700 hover:bg-slate-300 dark:hover:bg-slate-700 shadow-sm"
+              >
+                Mix Now
+              </button>
               <button 
                 onClick={() => useMixerStore.setState({ isAutomixEnabled: !isAutomixEnabled })}
                 className={`px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors border-2 ${

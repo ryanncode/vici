@@ -48,13 +48,29 @@ self.onmessage = async (e: MessageEvent) => {
 
       let trackSampleRate = 44100;
 
-      if (fileType === 'audio/flac' || fileType === 'flac') {
+      let resolvedFileType = typeof fileType === 'string' ? fileType.toLowerCase() : '';
+      
+      if (buffer instanceof ArrayBuffer && buffer.byteLength >= 4) {
+        const view = new DataView(buffer);
+        const magic = view.getUint32(0, false);
+        
+        if (magic === 0x664C6143) { // "fLaC"
+          resolvedFileType = 'flac';
+        } else if (magic === 0x52494646) { // "RIFF"
+          resolvedFileType = 'wav';
+        } else if (magic === 0x49443303 || magic === 0x49443304 || (magic & 0xFFE00000) === 0xFFE00000) { 
+          // ID3v2 or MP3 Sync word fallback
+          if (!resolvedFileType) resolvedFileType = 'mp3';
+        }
+      }
+
+      if (resolvedFileType === 'audio/flac' || resolvedFileType === 'flac') {
         const { l, r, p, bp, d, bl, sr } = await decodeFlac(buffer);
         leftChannel = l; rightChannel = r; peaks = p; bandPeaks = bp; duration = d; bufferLength = bl; trackSampleRate = sr;
-      } else if (fileType === 'audio/mpeg' || fileType === 'audio/mp3' || fileType === 'mp3') {
+      } else if (resolvedFileType === 'audio/mpeg' || resolvedFileType === 'audio/mp3' || resolvedFileType === 'mp3' || !resolvedFileType) {
         const { l, r, p, bp, d, bl, sr } = await decodeMp3(buffer);
         leftChannel = l; rightChannel = r; peaks = p; bandPeaks = bp; duration = d; bufferLength = bl; trackSampleRate = sr;
-      } else if (fileType === 'audio/wav' || fileType === 'wav') {
+      } else if (resolvedFileType === 'audio/wav' || resolvedFileType === 'wav') {
         const { l, r, p, bp, d, bl, sr } = decodeWav(buffer);
         leftChannel = l; rightChannel = r; peaks = p; bandPeaks = bp; duration = d; bufferLength = bl; trackSampleRate = sr;
       } else {
@@ -169,7 +185,15 @@ async function decodeFlac(buffer: ArrayBuffer) {
   if (!flacDecoder) throw new Error("FLAC decoder not initialized");
   
   const uint8Array = new Uint8Array(buffer);
-  const result = await flacDecoder.decode(uint8Array);
+  const result = await flacDecoder.decodeFile(uint8Array);
+
+  console.log("FLAC DECODED:", {
+    samples: result.samplesDecoded,
+    channels: result.channelData.length,
+    channel0Len: result.channelData[0] ? result.channelData[0].length : 0,
+    sampleRate: result.sampleRate,
+    firstVal: result.channelData[0] ? result.channelData[0][100] : 0
+  });
 
   const { p, bp, d, bl } = generatePeaksAndMetadata(result.channelData, result.sampleRate);
   

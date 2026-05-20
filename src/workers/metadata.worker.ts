@@ -1,20 +1,25 @@
 // Polyfill window for music-metadata which checks for browser environments
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).window = globalThis;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).module = { exports: {} };
 
 import * as mm from 'music-metadata';
 import type { TrackMetadata } from '../types/mixer';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let essentia: any = null;
 
 // Initialize Essentia WASM instance
 async function initEssentia() {
   try {
     // @ts-expect-error essentia.js types
-    const { EssentiaWASM } = await import('essentia.js/dist/essentia-wasm.es.js');
+    const wasmImport = await import('essentia.js/dist/essentia-wasm.es.js');
+    const EssentiaWASM = wasmImport.EssentiaWASM || wasmImport.default || wasmImport;
+    
     // @ts-expect-error essentia.js types
-    const { default: EssentiaJS } = await import('essentia.js/dist/essentia.js-core.es.js');
+    const coreImport = await import('essentia.js/dist/essentia.js-core.es.js');
+    const EssentiaJS = coreImport.EssentiaJS || coreImport.default || coreImport;
     
     const wasmModule = await EssentiaWASM();
     essentia = new EssentiaJS(wasmModule, false);
