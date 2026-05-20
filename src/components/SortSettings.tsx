@@ -10,43 +10,58 @@ interface SortSettingsProps {
 export const SortSettings: React.FC<SortSettingsProps> = ({ onClose }) => {
   const automixBars = useMixerStore(state => state.automixBars);
 
-  const [flowQueue, setFlowQueue] = useState([{ type: 'Genre', specific: 'Any' }]);
+  const [flowQueue, setFlowQueue] = useState<{ type: string; specific: string }[]>(() => {
+    const saved = localStorage.getItem('vici-sort-flowqueue');
+    return saved ? JSON.parse(saved) : [{ type: 'Genre', specific: 'Any' }];
+  });
   const library = useLibraryStore(state => state.library);
   const setLibrary = useLibraryStore(state => state.setLibrary);
 
   // State for metrics settings
-  const [metrics, setMetrics] = useState({
-    bpm: { direction: 'None', shuffle: 'None' },
-    year: { direction: 'None', shuffle: 'None' },
-    energy: { direction: 'None', shuffle: 'None' }
+  const [metrics, setMetrics] = useState(() => {
+    const saved = localStorage.getItem('vici-sort-metrics');
+    return saved ? JSON.parse(saved) : {
+      bpm: { direction: 'None', shuffle: 'None' },
+      year: { direction: 'None', shuffle: 'None' },
+      energy: { direction: 'None', shuffle: 'None' }
+    };
   });
 
   const handleDjStyleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    useMixerStore.setState({ automixBars: parseInt(e.target.value) });
+    const val = parseInt(e.target.value);
+    localStorage.setItem('vici-automix-bars', String(val));
+    useMixerStore.setState({ automixBars: val });
   };
 
   const addFlowItem = () => {
-    setFlowQueue([...flowQueue, { type: 'Genre', specific: 'Any' }]);
+    const newQueue = [...flowQueue, { type: 'Genre', specific: 'Any' }];
+    setFlowQueue(newQueue);
+    localStorage.setItem('vici-sort-flowqueue', JSON.stringify(newQueue));
   };
 
   const removeFlowItem = (index: number) => {
-    setFlowQueue(flowQueue.filter((_, idx) => idx !== index));
+    const newQueue = flowQueue.filter((_, idx) => idx !== index);
+    setFlowQueue(newQueue);
+    localStorage.setItem('vici-sort-flowqueue', JSON.stringify(newQueue));
   };
 
   const updateFlowItem = (index: number, key: 'type' | 'specific', value: string) => {
     const newQueue = [...flowQueue];
-    newQueue[index][key] = value;
+    newQueue[index] = { ...newQueue[index], [key]: value };
     setFlowQueue(newQueue);
+    localStorage.setItem('vici-sort-flowqueue', JSON.stringify(newQueue));
   };
 
   const handleMetricChange = (metric: 'bpm' | 'year' | 'energy', field: 'direction' | 'shuffle', value: string) => {
-    setMetrics({
+    const newMetrics = {
       ...metrics,
       [metric]: {
         ...metrics[metric],
         [field]: value
       }
-    });
+    };
+    setMetrics(newMetrics);
+    localStorage.setItem('vici-sort-metrics', JSON.stringify(newMetrics));
   };
 
   const applySort = () => {

@@ -113,8 +113,8 @@ export const useMixerStore = create<MixerState>((set) => ({
   crossfade: 0.5,
   crossfadeCurve: 'constant_power',
   masterDeck: null,
-  isAutomixEnabled: false,
-  automixBars: 4,
+  isAutomixEnabled: localStorage.getItem('vici-automix-enabled') === 'true',
+  automixBars: localStorage.getItem('vici-automix-bars') ? parseInt(localStorage.getItem('vici-automix-bars')!) : 4,
   masterVolume: 1.0,
   mixNowTrigger: 0,
 
@@ -160,7 +160,10 @@ export const useMixerStore = create<MixerState>((set) => ({
   setCrossfade: (value) => set({ crossfade: value }),
   setCrossfadeCurve: (curve) => set({ crossfadeCurve: curve }),
   setMasterDeck: (deckId) => set({ masterDeck: deckId }),
-  setIsAutomixEnabled: (enabled) => set({ isAutomixEnabled: enabled }),
+  setIsAutomixEnabled: (enabled) => {
+    localStorage.setItem('vici-automix-enabled', String(enabled));
+    set({ isAutomixEnabled: enabled });
+  },
   setMasterVolume: (v: number) => set({ masterVolume: v }),
   setMixNowTrigger: () => set({ mixNowTrigger: Date.now() }),
 }));

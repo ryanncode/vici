@@ -280,7 +280,7 @@ export default function App() {
                 Mix Now
               </button>
               <button 
-                onClick={() => useMixerStore.setState({ isAutomixEnabled: !isAutomixEnabled })}
+                onClick={() => useMixerStore.getState().setIsAutomixEnabled(!isAutomixEnabled)}
                 className={`px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors border-2 ${
                   isAutomixEnabled ? 'bg-blue-600 text-white border-blue-500 shadow-sm' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700 hover:bg-slate-300 dark:hover:bg-slate-700'
                 }`}
