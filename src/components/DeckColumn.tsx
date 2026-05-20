@@ -261,13 +261,13 @@ export const DeckColumn: React.FC<DeckColumnProps> = ({ deckId }) => {
                 <div key={slotIndex} className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900/50 p-1 rounded-md border border-slate-200 dark:border-slate-700/50 mb-1 last:mb-0 shadow-sm">
                   <div 
                     onClick={() => handleFxToggle(fxType as 'delay' | 'reverb' | 'phaser' | 'gate' | 'roll' | 'siren' | 'compressor')}
-                    className={`w-8 h-6 rounded-md border flex flex-col items-center justify-center cursor-pointer transition-colors shrink-0 ${isOn ? 'bg-blue-100 dark:bg-blue-900 border-blue-400 dark:border-blue-600' : 'bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-600 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
+                    className={`w-6 h-6 rounded-md border flex flex-col items-center justify-center cursor-pointer transition-colors shrink-0 ${isOn ? 'bg-blue-100 dark:bg-blue-900 border-blue-400 dark:border-blue-600' : 'bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-600 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
                   >
-                    <div className={`w-4 h-0.5 rounded-full mb-0.5 ${isOn ? 'bg-blue-500' : 'bg-slate-400 dark:bg-slate-500'}`}></div>
-                    <div className={`w-3 h-0.5 rounded-full ${isOn ? 'bg-blue-500' : 'bg-slate-400 dark:bg-slate-500'}`}></div>
+                    <div className={`w-3 h-0.5 rounded-full mb-0.5 ${isOn ? 'bg-blue-500' : 'bg-slate-400 dark:bg-slate-500'}`}></div>
+                    <div className={`w-2 h-0.5 rounded-full ${isOn ? 'bg-blue-500' : 'bg-slate-400 dark:bg-slate-500'}`}></div>
                   </div>
                   
-                  <div className="w-[60px] shrink-0">
+                  <div className="w-[45px] shrink-0">
                     <select 
                       value={fxType} 
                       onChange={(e) => {
@@ -275,49 +275,59 @@ export const DeckColumn: React.FC<DeckColumnProps> = ({ deckId }) => {
                         newSlots[slotIndex] = e.target.value as 'delay' | 'reverb' | 'phaser' | 'gate' | 'roll' | 'siren' | 'compressor';
                         setFxSlots(newSlots);
                       }}
-                      className="bg-transparent border border-slate-300 dark:border-slate-600 text-[10px] font-bold uppercase text-slate-700 dark:text-slate-300 rounded px-1 py-0.5 outline-none w-full"
+                      className="bg-transparent border border-slate-300 dark:border-slate-600 text-[9px] font-bold uppercase text-slate-700 dark:text-slate-300 rounded px-0.5 py-0.5 outline-none w-full"
                     >
-                      <option value="delay">Delay</option>
-                      <option value="reverb">Reverb</option>
-                      <option value="phaser">Phaser</option>
-                      <option value="gate">Gate</option>
-                      <option value="roll">Roll</option>
-                      <option value="siren">Siren</option>
-                      <option value="compressor">Comp</option>
+                      <option value="delay">DLY</option>
+                      <option value="reverb">RVB</option>
+                      <option value="phaser">PHS</option>
+                      <option value="gate">GTE</option>
+                      <option value="roll">RLL</option>
+                      <option value="siren">SRN</option>
+                      <option value="compressor">CMP</option>
                     </select>
                   </div>
                   
                   <div className="flex-1 flex justify-around items-center">
-                     <div className="flex items-center gap-1">
-                       <span className="text-[10px] font-bold text-slate-500">P1</span>
-                       <RotaryKnob 
-                          label="P1" hideLabel={true}
-                          size="xs" 
-                          min={0} max={1} step={0.01} 
-                          value={fxType === 'delay' ? state.fx.delayTime : fxType === 'reverb' ? state.fx.reverbSize : fxType === 'phaser' ? state.fx.phaserRate / 10 : 0.5} 
-                          onChange={(v) => handleFxParamChange(fxType as 'delay' | 'reverb' | 'phaser', fxType === 'delay' ? 'time' : fxType === 'reverb' ? 'size' : 'rate', fxType === 'phaser' ? v * 10 : v)}
-                        />
-                     </div>
-                     <div className="flex items-center gap-1">
-                       <span className="text-[10px] font-bold text-slate-500">P2</span>
-                       <RotaryKnob 
-                          label="P2" hideLabel={true}
-                          size="xs" 
-                          min={0} max={1} step={0.01} 
-                          value={fxType === 'delay' ? state.fx.delayFeedback : 0.5} 
-                          onChange={(v) => fxType === 'delay' && handleFxParamChange('delay', 'feedback', v)}
-                        />
-                     </div>
-                     <div className="flex items-center gap-1">
-                       <span className="text-[10px] font-bold text-slate-500">P3</span>
-                       <RotaryKnob 
-                          label="P3" hideLabel={true}
-                          size="xs" 
-                          min={0} max={1} step={0.01} 
-                          value={0.5} 
-                          onChange={() => {}}
-                        />
-                     </div>
+                    {fxType === 'reverb' && (
+                      <>
+                        <div className="flex items-center gap-0.5">
+                          <span className="text-[9px] font-bold text-slate-500 w-[16px]">MIX</span>
+                          <RotaryKnob label="MIX" hideLabel size="xs" min={0} max={1} step={0.01} value={state.fx.reverbSize} onChange={(v) => handleFxParamChange('reverb', 'size', v)} />
+                        </div>
+                        <div className="flex items-center gap-0.5">
+                          <span className="text-[9px] font-bold text-slate-500 w-[16px]">DEC</span>
+                          <RotaryKnob label="DEC" hideLabel size="xs" min={0.1} max={10.0} step={0.1} value={state.fx.reverbDecay} onChange={(v) => handleFxParamChange('reverb', 'decay', v)} />
+                        </div>
+                        <div className="flex items-center gap-0.5">
+                          <span className="text-[9px] font-bold text-slate-500 w-[16px]">PRE</span>
+                          <RotaryKnob label="PRE" hideLabel size="xs" min={0} max={100} step={1} value={state.fx.reverbPredelay} onChange={(v) => handleFxParamChange('reverb', 'predelay', v)} />
+                        </div>
+                        <div className="flex items-center gap-0.5">
+                          <span className="text-[9px] font-bold text-slate-500 w-[16px]">COL</span>
+                          <RotaryKnob label="COL" hideLabel size="xs" min={-1} max={1} step={0.01} value={state.fx.reverbColor} onChange={(v) => handleFxParamChange('reverb', 'color', v)} />
+                        </div>
+                      </>
+                    )}
+                    {fxType === 'delay' && (
+                      <>
+                        <div className="flex items-center gap-0.5">
+                          <span className="text-[9px] font-bold text-slate-500 w-[16px]">TIM</span>
+                          <RotaryKnob label="TIM" hideLabel size="xs" min={0} max={2} step={0.01} value={state.fx.delayTime} onChange={(v) => handleFxParamChange('delay', 'time', v)} />
+                        </div>
+                        <div className="flex items-center gap-0.5">
+                          <span className="text-[9px] font-bold text-slate-500 w-[16px]">FDB</span>
+                          <RotaryKnob label="FDB" hideLabel size="xs" min={0} max={0.95} step={0.01} value={state.fx.delayFeedback} onChange={(v) => handleFxParamChange('delay', 'feedback', v)} />
+                        </div>
+                      </>
+                    )}
+                    {fxType === 'phaser' && (
+                      <>
+                        <div className="flex items-center gap-0.5">
+                          <span className="text-[9px] font-bold text-slate-500 w-[16px]">RAT</span>
+                          <RotaryKnob label="RAT" hideLabel size="xs" min={0.1} max={10.0} step={0.01} value={state.fx.phaserRate} onChange={(v) => handleFxParamChange('phaser', 'rate', v)} />
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               );

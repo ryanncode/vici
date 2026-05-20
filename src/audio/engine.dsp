@@ -24,6 +24,9 @@ fx_delay_feedback = hslider("fx_delay_feedback", 0.5, 0.0, 0.95, 0.01) : si.smoo
 // Reverb
 fx_reverb_on = hslider("fx_reverb_on", 0, 0, 1, 1) : si.smoo;
 fx_reverb_size = hslider("fx_reverb_size", 0.5, 0.0, 1.0, 0.01) : si.smoo;
+fx_reverb_decay = hslider("fx_reverb_decay", 3.0, 0.1, 10.0, 0.1) : si.smoo;
+fx_reverb_predelay = hslider("fx_reverb_predelay", 20.0, 0.0, 100.0, 1.0) : si.smoo;
+fx_reverb_color = hslider("fx_reverb_color", 0.0, -1.0, 1.0, 0.01) : si.smoo;
 
 // Phaser
 fx_phaser_on = hslider("fx_phaser_on", 0, 0, 1, 1) : si.smoo;
@@ -43,6 +46,9 @@ fx_siren_on = hslider("fx_siren_on", 0, 0, 1, 1) : si.smoo;
 // Compressor (Macro Dynamics)
 fx_compressor_on = hslider("fx_compressor_on", 0, 0, 1, 1) : si.smoo;
 
+// Noise Sweep
+fx_noise_on = hslider("fx_noise_on", 0, 0, 1, 1) : si.smoo;
+fx_noise_sweep = hslider("fx_noise_sweep", 0.5, 0.0, 1.0, 0.01) : si.smoo;
 
 // --- DSP Blocks ---
 
@@ -92,17 +98,18 @@ with {
     lp_freq = 20000.0 * (0.001 ^ abs_c);
     
     Q = 0.707 + (abs_c * 1.5);
+    drive = abs_c * 0.8; // Introduce Crunch as filter opens
     
     // If c < 0, it's LP. If c > 0, it's HP. If c == 0, bypass.
     is_lp = c < -0.01;
     is_hp = c > 0.01;
     is_bypass = (is_lp == 0) & (is_hp == 0);
     
-    l_lp = l : fi.svf.lp(lp_freq, Q);
-    r_lp = r : fi.svf.lp(lp_freq, Q);
+    l_lp = l : fi.svf.lp(lp_freq, Q) : ef.cubicnl(drive, 0);
+    r_lp = r : fi.svf.lp(lp_freq, Q) : ef.cubicnl(drive, 0);
     
-    l_hp = l : fi.svf.hp(hp_freq, Q);
-    r_hp = r : fi.svf.hp(hp_freq, Q);
+    l_hp = l : fi.svf.hp(hp_freq, Q) : ef.cubicnl(drive, 0);
+    r_hp = r : fi.svf.hp(hp_freq, Q) : ef.cubicnl(drive, 0);
     
     l_filt = (l * is_bypass) + (l_lp * is_lp) + (l_hp * is_hp);
     r_filt = (r * is_bypass) + (r_lp * is_lp) + (r_hp * is_hp);
@@ -123,27 +130,19 @@ with {
 };
 
 // 2. Reverb
-reverb_fx(l, r) = l, r : re.zita_rev1_stereo(20, 200, 6000, 3.0, 3.0, 48000) : rev_mix
+reverb_fx(l, r) = l, r : re.zita_rev1_stereo(fx_reverb_predelay, f1, f2, fx_reverb_decay, fx_reverb_decay, 48000) : rev_mix
 with {
     wet = fx_reverb_on * fx_reverb_size;
+    c = fx_reverb_color;
+    f1 = 200.0 * (1.0 + (max(0.0, c) * 4.0));
+    f2 = 6000.0 * (1.0 - (max(0.0, -c) * 0.8333));
     rev_mix(rev_l, rev_r) = (l * (1.0 - wet)) + (rev_l * wet), (r * (1.0 - wet)) + (rev_r * wet);
 };
 
 // 3. Phaser
-phaser_fx(l, r) = l_out, r_out
+phaser_fx(l, r) = l, r <: (*(1-wet), *(1-wet)), (pf.phaser2_stereo(4, 0, 100, 2, 8000, fx_phaser_rate, 1.0, 0.5, 0) : *(wet), *(wet)) :> _,_
 with {
     wet = fx_phaser_on;
-    
-    rate = fx_phaser_rate;
-    lfo = os.osc(rate) * 0.5 + 0.5; // 0 to 1
-    freq = 500.0 + lfo * 2000.0;
-    
-    // A simple notch filter sweeping gives a phaser-like effect
-    ph_l = l : fi.peak_eq(-20, freq, 2.0) : fi.peak_eq(-20, freq * 2.0, 2.0);
-    ph_r = r : fi.peak_eq(-20, freq, 2.0) : fi.peak_eq(-20, freq * 2.0, 2.0);
-    
-    l_out = (l * (1-wet)) + (ph_l * wet);
-    r_out = (r * (1-wet)) + (ph_r * wet);
 };
 
 // 4. Gate
@@ -151,7 +150,8 @@ gate_fx(l, r) = l_out, r_out
 with {
     wet = fx_gate_on;
     lfo = os.lf_squarewave(fx_gate_rate) > 0.0;
-    gate_val = 1.0 - (wet * (1.0 - lfo)) : si.smoo;
+    env = lfo : en.ar(0.001, 0.005);
+    gate_val = 1.0 - (wet * (1.0 - env));
     l_out = l * gate_val;
     r_out = r * gate_val;
 };
@@ -161,22 +161,31 @@ roll_fx(l, r) = l_out, r_out
 with {
     trigger = fx_roll_on > 0.5;
     smooth_mix = trigger : si.smoo;
+    
+    capture_trig = trigger > trigger';
+    
     roll_time = max(1.0, (60.0 / max(1.0, fx_roll_bpm)) * 0.5 * ma.SR);
-    captured_time = roll_time : ba.sAndH(trigger);
+    cap_samps = max(1, int(roll_time : ba.sAndH(capture_trig)));
     
-    cap_samps = max(1, int(captured_time));
-    counter = (+(1) : %(cap_samps)) ~ *(trigger);
+    table_size = 262144;
+    write_idx = (+(1) : %(table_size)) ~ _ ;
+    start_idx = write_idx : ba.sAndH(capture_trig);
+    
+    run_counter = (+(1) : %(cap_samps)) ~ *(trigger);
+    
+    read_idx = (start_idx + run_counter) % table_size;
+    
+    roll_l = rwtable(table_size, 0.0, int(write_idx), l, int(read_idx));
+    roll_r = rwtable(table_size, 0.0, int(write_idx), r, int(read_idx));
+    
+    // To prevent clicking when looping, we can apply a small envelope dip at the loop point
     dip_samps = max(1, int(0.002 * ma.SR));
-    env_dip = (counter > dip_samps) & (counter < (cap_samps - dip_samps));
+    env_dip = (run_counter > dip_samps) & (run_counter < (cap_samps - dip_samps));
     fast_smoo = si.smooth(ba.tau2pole(0.002));
+    loop_env = env_dip : fast_smoo;
     
-    loop_fb = trigger * 0.98 * (env_dip : fast_smoo);
-    
-    loop_l(x) = x * (1.0 - trigger) : + ~ (de.fdelay(ma.SR*4, captured_time) : *(loop_fb) : fi.lowpass(1, 15000));
-    loop_r(x) = x * (1.0 - trigger) : + ~ (de.fdelay(ma.SR*4, captured_time) : *(loop_fb) : fi.lowpass(1, 15000));
-    
-    l_out = l * (1.0 - smooth_mix) + loop_l(l) * smooth_mix;
-    r_out = r * (1.0 - smooth_mix) + loop_r(r) * smooth_mix;
+    l_out = l * (1.0 - smooth_mix) + (roll_l * loop_env) * smooth_mix;
+    r_out = r * (1.0 - smooth_mix) + (roll_r * loop_env) * smooth_mix;
 };
 
 // 6. Siren (Dub Siren)
@@ -184,16 +193,23 @@ siren_fx(l, r) = l_out, r_out
 with {
     wet = fx_siren_on;
     
-    // Base frequency modulated by a fast LFO
-    lfo = os.osc(4.0) * 0.5 + 0.5; // 4Hz
-    freq = 400.0 + lfo * 400.0;
+    // LFO (Modulator)
+    lfo = os.lf_triangle(2.0) * 0.5 + 0.5; // 2Hz
     
-    // Square wave oscillator
-    siren_sig = os.square(freq) * 0.2; // 0.2 gain
+    // FM: LFO modulates VCO frequency
+    freq = 300.0 + lfo * 500.0;
     
-    // Apply an envelope so it doesn't click, and triggered by fx_siren_on
-    env = en.adsr(0.1, 0.1, 0.8, 0.5, wet);
-    siren_sound = siren_sig * env;
+    // Square wave oscillator (Carrier)
+    siren_sig = os.square(freq) * 0.2;
+    
+    // VCA Envelope
+    env = en.adsr(0.05, 0.1, 0.8, 0.5, wet);
+    siren_dry = siren_sig * env;
+    
+    // Dedicated tape echo path: fdelay with high feedback and lowpass filter
+    siren_echo(x) = x : + ~ (de.fdelay(ma.SR*4, ma.SR * 0.375) : *(0.75) : fi.lowpass(1, 4000));
+    
+    siren_sound = siren_dry : siren_echo;
     
     l_out = l + siren_sound;
     r_out = r + siren_sound;
@@ -213,6 +229,18 @@ with {
     
     l_out = (l * (1.0 - wet)) + (c_l * wet);
     r_out = (r * (1.0 - wet)) + (c_r * wet);
+};
+
+// 8. Noise Sweep
+noise_fx(l, r) = l_out, r_out
+with {
+    wet = fx_noise_on;
+    pink = no.pink_noise * 0.2;
+    sweep_freq = 200.0 * (75.0 ^ fx_noise_sweep); // 200 to 15000
+    bp_noise = pink : fi.svf.bp(sweep_freq, 4.0);
+    noise_sig = bp_noise * wet;
+    l_out = l + noise_sig;
+    r_out = r + noise_sig;
 };
 
 // --- Main Audio Graph ---
@@ -246,4 +274,4 @@ with {
     r_out = r_delayed * gr_smooth;
 };
 
-process = eq : delay_fx : reverb_fx : phaser_fx : roll_fx : gate_fx : siren_fx : compressor_fx : dj_filter : *(volume), *(volume) : master_limiter;
+process = eq : phaser_fx : roll_fx : gate_fx : compressor_fx : dj_filter : *(volume), *(volume) : delay_fx : reverb_fx : siren_fx : noise_fx : master_limiter;

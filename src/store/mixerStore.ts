@@ -9,6 +9,9 @@ export interface FxState {
   delayFeedback: number;
   reverbOn: boolean;
   reverbSize: number;
+  reverbDecay: number;
+  reverbPredelay: number;
+  reverbColor: number;
   phaserOn: boolean;
   phaserRate: number;
   gateOn: boolean;
@@ -48,6 +51,9 @@ const initialFxState: FxState = {
   delayFeedback: 0.5,
   reverbOn: false,
   reverbSize: 0.7,
+  reverbDecay: 3.0,
+  reverbPredelay: 20.0,
+  reverbColor: 0.0,
   phaserOn: false,
   phaserRate: 0.5,
   gateOn: false,

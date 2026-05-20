@@ -297,6 +297,15 @@ export class Deck {
   public setReverbSize(value: number): void {
     if (this.faustNode) this.faustNode.setParamValue('/engine/fx_reverb_size', value);
   }
+  public setReverbDecay(value: number): void {
+    if (this.faustNode) this.faustNode.setParamValue('/engine/fx_reverb_decay', value);
+  }
+  public setReverbPredelay(value: number): void {
+    if (this.faustNode) this.faustNode.setParamValue('/engine/fx_reverb_predelay', value);
+  }
+  public setReverbColor(value: number): void {
+    if (this.faustNode) this.faustNode.setParamValue('/engine/fx_reverb_color', value);
+  }
   public setPhaserState(isOn: boolean): void {
     if (this.faustNode) this.faustNode.setParamValue('/engine/fx_phaser_on', isOn ? 1 : 0);
   }

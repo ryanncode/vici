@@ -307,7 +307,7 @@ export function useDeckControl(deckId: 'A' | 'B') {
     }
   };
 
-  const handleFxParamChange = (fxType: 'delay' | 'reverb' | 'phaser', param: 'time' | 'feedback' | 'size' | 'rate', value: number) => {
+  const handleFxParamChange = (fxType: 'delay' | 'reverb' | 'phaser', param: 'time' | 'feedback' | 'size' | 'decay' | 'predelay' | 'color' | 'rate', value: number) => {
     const engine = AudioEngine.getInstance();
     const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
     const store = useMixerStore.getState();
@@ -320,9 +320,20 @@ export function useDeckControl(deckId: 'A' | 'B') {
         store.setDeckFx(deckId, { delayFeedback: value });
         throttledDSP(`fx-${deckId}-delayFB`, () => deckEngine.setDelayFeedback(value));
       }
-    } else if (fxType === 'reverb' && param === 'size') {
-      store.setDeckFx(deckId, { reverbSize: value });
-      throttledDSP(`fx-${deckId}-revSize`, () => deckEngine.setReverbSize(value));
+    } else if (fxType === 'reverb') {
+      if (param === 'size') {
+        store.setDeckFx(deckId, { reverbSize: value });
+        throttledDSP(`fx-${deckId}-revSize`, () => deckEngine.setReverbSize(value));
+      } else if (param === 'decay') {
+        store.setDeckFx(deckId, { reverbDecay: value });
+        throttledDSP(`fx-${deckId}-revDecay`, () => deckEngine.setReverbDecay(value));
+      } else if (param === 'predelay') {
+        store.setDeckFx(deckId, { reverbPredelay: value });
+        throttledDSP(`fx-${deckId}-revPredelay`, () => deckEngine.setReverbPredelay(value));
+      } else if (param === 'color') {
+        store.setDeckFx(deckId, { reverbColor: value });
+        throttledDSP(`fx-${deckId}-revColor`, () => deckEngine.setReverbColor(value));
+      }
     } else if (fxType === 'phaser' && param === 'rate') {
       store.setDeckFx(deckId, { phaserRate: value });
       throttledDSP(`fx-${deckId}-phaseRate`, () => deckEngine.setPhaserRate(value));
