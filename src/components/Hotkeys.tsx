@@ -102,6 +102,8 @@ export const Hotkeys: React.FC = () => {
               { action: 'Nudge Pitch Deck A (+/-)', key: 'W / S' },
               { action: 'Nudge Pitch Deck B (+/-)', key: 'Up / Down Arrows' },
               { action: 'Crossfader Left / Right', key: 'Left / Right Arrows' },
+              { action: 'Navigate Library Crates', key: 'Up / Down Arrows (when active)' },
+              { action: 'Load Selected Crate to Queue', key: 'Enter (when active)' },
             ].map((hk, i) => (
               <div key={i} className="px-4 py-3 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                 <span className="text-sm text-slate-700 dark:text-slate-300">{hk.action}</span>

@@ -1,26 +1,143 @@
-import { useRef } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../services/Database';
 import { useLibraryStore } from '../store/libraryStore';
 import { loadLocalDirectory, type FileSystemFileHandle } from '../services/FileManager';
 import { metadataScanner } from '../services/MetadataScanner';
+import { OPFSManager } from '../services/OPFSManager';
 import type { Track, TrackMetadata } from '../types/mixer';
 
 export function useLibrary() {
   const store = useLibraryStore();
   
   const fallbackDirInputRef = useRef<HTMLInputElement>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
+
+  // Use a local state for the currently "browsed" crate, separate from the mixer queue
+  const [activeCrateId, setActiveCrateId] = useState<string | null>(null);
+
+  useEffect(() => {
+    OPFSManager.init();
+  }, []);
   
-  const rawSessionTracks = useLiveQuery(
+  const browseTracks = useLiveQuery(
     async () => {
-      if (store.activeSessionTrackIds.length === 0) return [];
-      return await db.tracks.where('id').anyOf(store.activeSessionTrackIds).toArray();
+      if (!activeCrateId) return [];
+      const crate = await db.playlists.get(activeCrateId);
+      if (!crate || !crate.trackIds) return [];
+      const tracks = await db.tracks.where('id').anyOf(crate.trackIds).toArray();
+      // Keep exact order
+      const trackMap = new Map(tracks.map(t => [t.id, t]));
+      return crate.trackIds.map(id => trackMap.get(id)).filter(Boolean) as TrackMetadata[];
     },
-    [store.activeSessionTrackIds]
+    [activeCrateId]
   ) || [];
 
-  const sessionTracks = rawSessionTracks.map(t => ({ ...t, ...store.sessionHandles[t.id] }));
-  const displayTracks: (Track | TrackMetadata)[] = store.activeTab === 'tracks' ? (store.sessionStarted ? sessionTracks : []) : store.library;
+  const displayTracks: (Track | TrackMetadata)[] = browseTracks.length > 0 ? browseTracks : [];
+
+  const processDropItems = async (items: DataTransferItemList) => {
+    setIsImporting(true);
+    setImportProgress(0);
+    
+    const filesToProcess: { file: File, path: string }[] = [];
+    
+    const readDirectory = async (dirEntry: any, path = '') => {
+      const reader = dirEntry.createReader();
+      const entries = await new Promise<any[]>((resolve) => {
+        reader.readEntries((res: any[]) => resolve(res));
+      });
+      
+      for (const entry of entries) {
+        if (entry.isFile) {
+          const file = await new Promise<File>((resolve) => entry.file(resolve));
+          if (file.type.startsWith('audio/') || file.name.match(/\.(mp3|wav|flac|ogg)$/i)) {
+            filesToProcess.push({ file, path: path + file.name });
+          }
+        } else if (entry.isDirectory) {
+          await readDirectory(entry, path + entry.name + '/');
+        }
+      }
+    };
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind === 'file') {
+        const entry = item.webkitGetAsEntry?.();
+        if (entry) {
+          if (entry.isDirectory) {
+            await readDirectory(entry, entry.name + '/');
+          } else if (entry.isFile) {
+            const file = item.getAsFile();
+            if (file && (file.type.startsWith('audio/') || file.name.match(/\.(mp3|wav|flac|ogg)$/i))) {
+              filesToProcess.push({ file, path: file.name });
+            }
+          }
+        }
+      }
+    }
+
+    if (filesToProcess.length === 0) {
+      setIsImporting(false);
+      return;
+    }
+
+    const newIds: string[] = [];
+    const newHandles: Record<string, { rawFile: File }> = {};
+    const unScanned: { id: string, rawFile: File, filePath: string, opfsPath?: string }[] = [];
+
+    const playlistName = filesToProcess[0].path.split('/')[0] || `Crate ${new Date().toLocaleDateString()}`;
+    const playlistId = `playlist-${Date.now()}`;
+
+    let current = 0;
+    for (const item of filesToProcess) {
+      const { file, path } = item;
+      try {
+        const safeFilename = path.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+        const opfsPath = await OPFSManager.saveFile(file, safeFilename);
+
+        const id = `opfs-${Date.now()}-${current}`;
+        await db.tracks.put({
+          id,
+          filePath: path,
+          fileName: file.name,
+          title: file.name.replace(/\.[^/.]+$/, ""),
+          artist: 'Local File',
+          bpm: 120,
+          duration: 0,
+          opfsPath
+        });
+
+        newIds.push(id);
+        newHandles[id] = { rawFile: file };
+        unScanned.push({ id, rawFile: file, filePath: path, opfsPath });
+      } catch (e) {
+        console.error("Failed to process file:", file.name, e);
+      }
+      current++;
+      setImportProgress(Math.round((current / filesToProcess.length) * 100));
+    }
+
+    await db.playlists.put({
+      id: playlistId,
+      name: playlistName,
+      trackIds: newIds
+    });
+
+    store.setSessionHandles(prev => ({ ...prev, ...newHandles }));
+    store.setActiveSessionTrackIds(prev => Array.from(new Set([...prev, ...newIds])));
+    store.setSessionStarted(true);
+    store.setActiveTab('tracks');
+    setIsImporting(false);
+
+    for (const t of unScanned) {
+      try {
+        await metadataScanner.scanFileHandle(undefined, t.filePath, t.rawFile, t.id);
+      } catch (error) {
+        console.error("OPFS background scan failed:", error);
+      }
+    }
+  };
 
   const handleLoadDirectory = async () => {
     if ('showDirectoryPicker' in window) {
@@ -144,12 +261,18 @@ export function useLibrary() {
     if (window.confirm("Are you sure you want to clear the entire library cache?")) {
       try {
         await db.tracks.clear();
+        await db.playlists.clear();
+        await OPFSManager.clearAll();
         store.clearSession();
+        // Force refresh for UI
+        window.dispatchEvent(new Event('storage-updated'));
       } catch (e) {
         console.error("Failed to clear cache", e);
       }
     }
   };
+
+  const crates = useLiveQuery(() => db.playlists.toArray(), []) || [];
 
   return {
     ...store,
@@ -157,6 +280,12 @@ export function useLibrary() {
     handleLoadDirectory,
     clearCache,
     fallbackDirInputRef,
-    handleFallbackFiles
+    handleFallbackFiles,
+    processDropItems,
+    isImporting,
+    importProgress,
+    crates,
+    activeCrateId,
+    setActiveCrateId
   };
 }

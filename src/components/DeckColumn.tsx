@@ -134,29 +134,29 @@ export const DeckColumn: React.FC<DeckColumnProps> = ({ deckId }) => {
   const track = state.track;
 
   return (
-    <div className={`w-[390px] h-[520px] shrink-0 flex flex-col relative gap-[10px]`}>
+    <div className={`flex-1 h-[480px] flex flex-col relative gap-2 min-w-0`}>
       
       {/* 1. Metadata Block (Floating Widget) */}
       <div className="h-[90px] w-full px-4 py-1.5 flex flex-col justify-between bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 rounded-2xl shadow-md shrink-0">
         {/* Row 1: Title & BPM */}
         <div className="flex justify-between items-end mb-0.5">
           <span 
-            className={`text-[18px] font-bold text-slate-800 dark:text-white truncate max-w-[280px] cursor-pointer hover:text-blue-500 transition-colors ${state.isPlaying ? 'text-blue-500 dark:text-blue-400' : ''}`}
+            className={`text-[18px] font-bold text-slate-800 dark:text-white truncate cursor-pointer hover:text-blue-500 transition-colors flex-1 pr-4 ${state.isPlaying ? 'text-blue-500 dark:text-blue-400' : ''}`}
             onClick={togglePlayback}
           >
             {track?.title || 'No Track Loaded'}
           </span>
-          <span ref={bpmRef} className="text-[20px] font-bold font-mono text-blue-500">
+          <span ref={bpmRef} className="text-[20px] font-bold font-mono text-blue-500 shrink-0">
             0.0
           </span>
         </div>
         
         {/* Row 2: Artist & Key */}
         <div className="flex justify-between items-center -mt-0.5">
-          <span className="text-[13px] font-medium text-slate-500 dark:text-slate-400 truncate max-w-[280px]">
+          <span className="text-[13px] font-medium text-slate-500 dark:text-slate-400 truncate flex-1 pr-4">
             {track?.artist || 'Unknown Artist'}
           </span>
-          <span className="text-[12px] font-mono font-bold text-slate-600 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded-lg border border-slate-300 dark:border-slate-600">
+          <span className="text-[12px] font-mono font-bold text-slate-600 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded-lg border border-slate-300 dark:border-slate-600 shrink-0">
             {track?.key || '-'}
           </span>
         </div>
@@ -172,20 +172,28 @@ export const DeckColumn: React.FC<DeckColumnProps> = ({ deckId }) => {
         </div>
       </div>
 
-      <div className={`flex flex-1 ${isLeft ? 'flex-row' : 'flex-row-reverse'} gap-[10px]`}>
+      <div className={`flex flex-1 ${isLeft ? 'flex-row' : 'flex-row-reverse'} gap-2`}>
         
         {/* 2. Outer Edge: Pitch Control (Floating Widget) */}
-        <div className={`w-[50px] h-full bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 rounded-2xl flex flex-col items-center py-4 justify-between shadow-md shrink-0`}>
-          <button onClick={() => nudgePitch(0.01)} className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 text-sm font-bold flex items-center justify-center transition">
+        <div className={`w-[70px] h-full bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 rounded-xl flex flex-col items-center py-2 justify-between shadow-md shrink-0`}>
+          <button 
+            onClick={() => toggleSync(!state.sync)} 
+            className={`w-12 h-8 rounded-md border transition relative overflow-hidden group flex flex-col items-center justify-center mb-3 ${state.sync ? 'bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 text-green-700 dark:text-green-400' : 'bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
+          >
+            {state.sync && <div className="w-full h-1 bg-green-500 absolute top-0"></div>}
+            <span className="text-[10px] font-bold tracking-widest mt-0.5">SYNC</span>
+          </button>
+
+          <button onClick={() => nudgePitch(0.01)} className="w-12 h-7 rounded-md bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 text-sm font-bold flex items-center justify-center transition">
             +
           </button>
           
           {/* Pitch Slider */}
-          <div className="flex-1 w-8 my-4 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-300 dark:border-slate-700 relative flex justify-center py-2 shadow-inner overflow-hidden touch-none" onPointerDown={handlePitchPointerDown} onWheel={handlePitchWheel} onDoubleClick={() => setPitch(1.0)}>
+          <div className="flex-1 w-10 my-2 bg-slate-100 dark:bg-slate-900 rounded-md border border-slate-300 dark:border-slate-700 relative flex justify-center py-2 shadow-inner overflow-hidden touch-none" onPointerDown={handlePitchPointerDown} onWheel={handlePitchWheel} onDoubleClick={() => setPitch(1.0)}>
             <input type="range" min="0.84" max="1.16" step="any" value={state.pitch} className="absolute inset-0 w-full h-full opacity-0 pointer-events-none" />
             <div className="w-0.5 bg-slate-400 dark:bg-black h-full rounded-full"></div>
             {/* Center zero line */}
-            <div className="absolute top-1/2 w-4 h-0.5 bg-slate-400 dark:bg-white/30 -translate-y-1/2"></div>
+            <div className="absolute top-1/2 w-6 h-0.5 bg-slate-400 dark:bg-white/30 -translate-y-1/2"></div>
             {/* Pitch Fader Cap */}
             <div 
               className="absolute w-full h-6 bg-slate-300 dark:bg-slate-700 border border-slate-400 dark:border-slate-600 rounded flex items-center justify-center shadow-lg pointer-events-none"
@@ -195,70 +203,71 @@ export const DeckColumn: React.FC<DeckColumnProps> = ({ deckId }) => {
             </div>
           </div>
 
-          <button onClick={() => nudgePitch(-0.01)} className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 text-sm font-bold flex items-center justify-center transition mb-4">
+          <button onClick={() => nudgePitch(-0.01)} className="w-12 h-7 rounded-md bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 text-sm font-bold flex items-center justify-center transition mb-3">
             -
           </button>
 
           <button 
-            onClick={() => toggleSync(!state.sync)} 
-            className={`w-8 h-10 rounded-lg border transition relative overflow-hidden group flex flex-col items-center justify-center ${state.sync ? 'bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 text-green-700 dark:text-green-400' : 'bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
+            onClick={() => togglePlayback()} 
+            className={`w-14 h-14 rounded-full border shadow-md flex items-center justify-center transition-colors mb-3 ${state.isPlaying ? 'bg-blue-100 dark:bg-blue-900 border-blue-400 dark:border-blue-600 text-blue-600 dark:text-blue-400' : 'bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
           >
-            {state.sync && <div className="w-full h-1 bg-green-500 absolute top-0"></div>}
-            <span className="text-[9px] font-bold tracking-widest mt-1">SYNC</span>
+            {state.isPlaying ? (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                <rect x="6" y="4" width="4" height="16" />
+                <rect x="14" y="4" width="4" height="16" />
+              </svg>
+            ) : (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" className="ml-1">
+                <path d="M5 3L19 12L5 21V3Z" />
+              </svg>
+            )}
           </button>
         </div>
 
         {/* 3. Core Area: Performance Grid & Smart FX (Floating Widget) */}
-        <div className="flex-1 h-full flex flex-col bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 rounded-2xl p-4 shadow-md overflow-hidden">
+        <div className="flex-1 h-full flex flex-col bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 rounded-xl p-3 shadow-md overflow-hidden">
           
           {/* Dynamic Performance Pad Matrix (Top Half) */}
           <div className="flex-1 flex flex-col">
             {/* Mode Tabs */}
-            <div className="flex gap-1 mb-2">
-              <button onClick={() => setPadMode('HOT_CUE')} className={`flex-1 py-1 text-[10px] font-bold tracking-wider rounded-lg border-2 ${padMode === 'HOT_CUE' ? 'bg-slate-800 text-white border-blue-500 dark:bg-slate-900' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 border-transparent hover:bg-slate-200 dark:hover:bg-slate-600'}`}>HOT CUE</button>
-              <button onClick={() => setPadMode('LOOP')} className={`flex-1 py-1 text-[10px] font-bold tracking-wider rounded-lg border-2 ${padMode === 'LOOP' ? 'bg-slate-800 text-white border-green-500 dark:bg-slate-900' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 border-transparent hover:bg-slate-200 dark:hover:bg-slate-600'}`}>LOOP</button>
-              <button onClick={() => setPadMode('SAMPLER')} className={`flex-1 py-1 text-[10px] font-bold tracking-wider rounded-lg border-2 ${padMode === 'SAMPLER' ? 'bg-slate-800 text-white border-purple-500 dark:bg-slate-900' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 border-transparent hover:bg-slate-200 dark:hover:bg-slate-600'}`}>SAMPLER</button>
+            <div className="flex gap-1 mb-1">
+              <button onClick={() => setPadMode('HOT_CUE')} className={`flex-1 py-0.5 text-[11px] font-bold tracking-wider rounded-md border-2 ${padMode === 'HOT_CUE' ? 'bg-slate-800 text-white border-blue-500 dark:bg-slate-900' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 border-transparent hover:bg-slate-200 dark:hover:bg-slate-600'}`}>HOT CUE</button>
+              <button onClick={() => setPadMode('LOOP')} className={`flex-1 py-0.5 text-[11px] font-bold tracking-wider rounded-md border-2 ${padMode === 'LOOP' ? 'bg-slate-800 text-white border-green-500 dark:bg-slate-900' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 border-transparent hover:bg-slate-200 dark:hover:bg-slate-600'}`}>LOOP</button>
+              <button onClick={() => setPadMode('SAMPLER')} className={`flex-1 py-0.5 text-[11px] font-bold tracking-wider rounded-md border-2 ${padMode === 'SAMPLER' ? 'bg-slate-800 text-white border-purple-500 dark:bg-slate-900' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 border-transparent hover:bg-slate-200 dark:hover:bg-slate-600'}`}>SAMPLER</button>
             </div>
             
             {/* 2x4 Pad Grid */}
-            <div className="grid grid-cols-4 grid-rows-2 gap-2 flex-1 mb-4">
-              <button 
-                onClick={() => togglePlayback()} 
-                className={`border rounded-lg shadow-sm relative overflow-hidden group transition-colors flex items-center justify-center ${state.isPlaying ? 'bg-slate-300 dark:bg-slate-600 border-slate-400 dark:border-slate-500' : 'bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-600 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
-              >
-                <div className="w-full h-1.5 absolute top-0 bg-blue-500/40 group-hover:bg-blue-500/60"></div>
-                <span className="text-[10px] font-bold tracking-widest text-slate-600 dark:text-slate-300">PLAY</span>
-              </button>
-              {[...Array(7)].map((_, i) => (
-                <button key={i+1} className="bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm relative overflow-hidden group transition-colors">
-                  <div className={`w-full h-1.5 absolute top-0 ${padMode === 'HOT_CUE' ? 'bg-blue-500/40 group-hover:bg-blue-500/60' : padMode === 'LOOP' ? 'bg-green-500/40 group-hover:bg-green-500/60' : 'bg-purple-500/40 group-hover:bg-purple-500/60'}`}></div>
+            <div className="grid grid-cols-4 grid-rows-2 gap-1.5 flex-1 mb-1.5">
+              {[...Array(8)].map((_, i) => (
+                <button key={i} className="bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm relative overflow-hidden group transition-colors">
+                  <div className={`w-full h-1 absolute top-0 ${padMode === 'HOT_CUE' ? 'bg-blue-500/40 group-hover:bg-blue-500/60' : padMode === 'LOOP' ? 'bg-green-500/40 group-hover:bg-green-500/60' : 'bg-purple-500/40 group-hover:bg-purple-500/60'}`}></div>
                 </button>
               ))}
             </div>
           </div>
 
           {/* Spacer */}
-          <div className="w-full h-px bg-slate-200 dark:bg-slate-700 mb-4"></div>
+          <div className="w-full h-px bg-slate-200 dark:bg-slate-700 mb-1.5"></div>
 
           {/* Modular Smart FX Bank (Bottom Half) */}
-          <div className="flex-1 flex flex-col justify-between">
-            <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 tracking-widest mb-1">SMART FX</div>
+          <div className="shrink-0 flex flex-col justify-between">
+            <div className="text-[11px] font-bold text-slate-400 dark:text-slate-500 tracking-widest mb-1">SMART FX</div>
             
             {/* 3 Parallel FX Slots */}
             {fxSlots.map((fxType, slotIndex) => {
               const isOn = state.fx[`${fxType}On` as keyof typeof state.fx] as boolean;
               
               return (
-                <div key={slotIndex} className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg border border-slate-200 dark:border-slate-700/50 mb-1 last:mb-0 shadow-sm">
+                <div key={slotIndex} className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900/50 p-1 rounded-md border border-slate-200 dark:border-slate-700/50 mb-1 last:mb-0 shadow-sm">
                   <div 
                     onClick={() => handleFxToggle(fxType as 'delay' | 'reverb' | 'phaser' | 'gate' | 'roll' | 'siren' | 'compressor')}
-                    className={`w-10 h-8 rounded-lg border flex flex-col items-center justify-center cursor-pointer transition-colors shrink-0 ${isOn ? 'bg-blue-100 dark:bg-blue-900 border-blue-400 dark:border-blue-600' : 'bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-600 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
+                    className={`w-8 h-6 rounded-md border flex flex-col items-center justify-center cursor-pointer transition-colors shrink-0 ${isOn ? 'bg-blue-100 dark:bg-blue-900 border-blue-400 dark:border-blue-600' : 'bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-600 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
                   >
-                    <div className={`w-6 h-1 rounded-full mb-1 ${isOn ? 'bg-blue-500' : 'bg-slate-400 dark:bg-slate-500'}`}></div>
-                    <div className={`w-4 h-1 rounded-full ${isOn ? 'bg-blue-500' : 'bg-slate-400 dark:bg-slate-500'}`}></div>
+                    <div className={`w-4 h-0.5 rounded-full mb-0.5 ${isOn ? 'bg-blue-500' : 'bg-slate-400 dark:bg-slate-500'}`}></div>
+                    <div className={`w-3 h-0.5 rounded-full ${isOn ? 'bg-blue-500' : 'bg-slate-400 dark:bg-slate-500'}`}></div>
                   </div>
                   
-                  <div className="w-[80px] shrink-0">
+                  <div className="w-[60px] shrink-0">
                     <select 
                       value={fxType} 
                       onChange={(e) => {
@@ -266,7 +275,7 @@ export const DeckColumn: React.FC<DeckColumnProps> = ({ deckId }) => {
                         newSlots[slotIndex] = e.target.value as 'delay' | 'reverb' | 'phaser' | 'gate' | 'roll' | 'siren' | 'compressor';
                         setFxSlots(newSlots);
                       }}
-                      className="bg-transparent border border-slate-300 dark:border-slate-600 text-[9px] font-bold uppercase text-slate-700 dark:text-slate-300 rounded px-1 py-1 outline-none w-full"
+                      className="bg-transparent border border-slate-300 dark:border-slate-600 text-[10px] font-bold uppercase text-slate-700 dark:text-slate-300 rounded px-1 py-0.5 outline-none w-full"
                     >
                       <option value="delay">Delay</option>
                       <option value="reverb">Reverb</option>
@@ -279,27 +288,36 @@ export const DeckColumn: React.FC<DeckColumnProps> = ({ deckId }) => {
                   </div>
                   
                   <div className="flex-1 flex justify-around items-center">
-                     <RotaryKnob 
-                        label="Param 1" 
-                        size="xs" 
-                        min={0} max={1} step={0.01} 
-                        value={fxType === 'delay' ? state.fx.delayTime : fxType === 'reverb' ? state.fx.reverbSize : fxType === 'phaser' ? state.fx.phaserRate / 10 : 0.5} 
-                        onChange={(v) => handleFxParamChange(fxType as 'delay' | 'reverb' | 'phaser', fxType === 'delay' ? 'time' : fxType === 'reverb' ? 'size' : 'rate', fxType === 'phaser' ? v * 10 : v)}
-                      />
-                      <RotaryKnob 
-                        label="Param 2" 
-                        size="xs" 
-                        min={0} max={1} step={0.01} 
-                        value={fxType === 'delay' ? state.fx.delayFeedback : 0.5} 
-                        onChange={(v) => fxType === 'delay' && handleFxParamChange('delay', 'feedback', v)}
-                      />
-                      <RotaryKnob 
-                        label="Param 3" 
-                        size="xs" 
-                        min={0} max={1} step={0.01} 
-                        value={0.5} 
-                        onChange={() => {}}
-                      />
+                     <div className="flex items-center gap-1">
+                       <span className="text-[10px] font-bold text-slate-500">P1</span>
+                       <RotaryKnob 
+                          label="P1" hideLabel={true}
+                          size="xs" 
+                          min={0} max={1} step={0.01} 
+                          value={fxType === 'delay' ? state.fx.delayTime : fxType === 'reverb' ? state.fx.reverbSize : fxType === 'phaser' ? state.fx.phaserRate / 10 : 0.5} 
+                          onChange={(v) => handleFxParamChange(fxType as 'delay' | 'reverb' | 'phaser', fxType === 'delay' ? 'time' : fxType === 'reverb' ? 'size' : 'rate', fxType === 'phaser' ? v * 10 : v)}
+                        />
+                     </div>
+                     <div className="flex items-center gap-1">
+                       <span className="text-[10px] font-bold text-slate-500">P2</span>
+                       <RotaryKnob 
+                          label="P2" hideLabel={true}
+                          size="xs" 
+                          min={0} max={1} step={0.01} 
+                          value={fxType === 'delay' ? state.fx.delayFeedback : 0.5} 
+                          onChange={(v) => fxType === 'delay' && handleFxParamChange('delay', 'feedback', v)}
+                        />
+                     </div>
+                     <div className="flex items-center gap-1">
+                       <span className="text-[10px] font-bold text-slate-500">P3</span>
+                       <RotaryKnob 
+                          label="P3" hideLabel={true}
+                          size="xs" 
+                          min={0} max={1} step={0.01} 
+                          value={0.5} 
+                          onChange={() => {}}
+                        />
+                     </div>
                   </div>
                 </div>
               );

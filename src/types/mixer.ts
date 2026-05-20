@@ -23,6 +23,8 @@ export interface TrackMetadata {
   duration: number;
   isScanned?: boolean;
   replayGain?: number;
+  energy?: number;
+  matchScore?: number;
   // Non-indexed properties
   albumArt?: Blob;
   waveformPeaks?: Float32Array;
@@ -34,6 +36,7 @@ export interface TrackMetadata {
   outroMarker?: number;
   fileHandle?: FileSystemFileHandle;
   rawFile?: File; // Fallback HTML5 File
+  opfsPath?: string; // Path in OPFS
 }
 
 export interface Track {
@@ -49,6 +52,8 @@ export interface Track {
   bitrate?: number;
   duration: string;
   replayGain?: number;
+  energy?: number;
+  matchScore?: number;
   url: string; // Dynamic Object URL or local asset path
   waveformPeaks?: Float32Array;
   bandPeaks?: Float32Array;
@@ -59,6 +64,13 @@ export interface Track {
   outroMarker?: number;
   fileHandle?: FileSystemFileHandle; // FileSystemFileHandle
   rawFile?: File; // Fallback HTML5 File
+  opfsPath?: string;
+}
+
+export interface Playlist {
+  id: string;
+  name: string;
+  trackIds: string[];
 }
 
 export interface DeckState {

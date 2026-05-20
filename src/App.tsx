@@ -260,27 +260,12 @@ export default function App() {
             <div className="flex items-center gap-0 group">
               <button 
                 onClick={() => useMixerStore.setState({ isAutomixEnabled: !isAutomixEnabled })}
-                className={`px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-l-lg transition-colors border-2 ${
-                  isAutomixEnabled ? 'bg-amber-500 text-black border-amber-500' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700 hover:bg-slate-300 dark:hover:bg-slate-700'
+                className={`px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors border-2 ${
+                  isAutomixEnabled ? 'bg-blue-600 text-white border-blue-500 shadow-sm' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700 hover:bg-slate-300 dark:hover:bg-slate-700'
                 }`}
               >
                 Auto-Mix
               </button>
-              <div className="relative">
-                <select 
-                  className="appearance-none px-2 py-1.5 text-xs bg-slate-200 dark:bg-slate-800 border-y-2 border-r-2 border-slate-300 dark:border-slate-700 rounded-r-lg hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors text-slate-600 dark:text-slate-400 cursor-pointer outline-none focus:ring-0 w-[110px]"
-                  onChange={(e) => useMixerStore.setState({ automixBars: parseInt(e.target.value) })}
-                  defaultValue="4"
-                >
-                  <option value="0">No Fade</option>
-                  <option value="1">1-2 Bars</option>
-                  <option value="2">2-8 Bars</option>
-                  <option value="4">4-16 Bars</option>
-                  <option value="8">8-32 Bars</option>
-                  <option value="16">16-64 Bars</option>
-                </select>
-                <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500 text-xs">▼</div>
-              </div>
             </div>
           </div>
 
@@ -341,8 +326,8 @@ export default function App() {
             {/* Stacked Waveform Unit (150px) */}
             <StackedWaveforms />
 
-            {/* Center Mixer Axis & Decks (520px) */}
-            <div className="h-[520px] shrink-0 flex w-full gap-[10px]">
+            {/* Center Mixer Axis & Decks (480px) */}
+            <div className="h-[480px] shrink-0 flex w-full gap-2">
               <DeckColumn deckId="A" />
               <CenterMixer />
               <DeckColumn deckId="B" />

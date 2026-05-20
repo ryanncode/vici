@@ -4,6 +4,7 @@ import { useLibraryStore } from '../store/libraryStore';
 import type { Track, TrackMetadata } from '../types/mixer';
 import { createTrackUrl } from '../services/FileManager';
 import { metadataScanner } from '../services/MetadataScanner';
+import { OPFSManager } from '../services/OPFSManager';
 
 import { db } from '../services/Database';
 
@@ -34,7 +35,15 @@ export function useDeckControl(deckId: 'A' | 'B') {
       let trackUrl = track.url;
       
       // Request permissions IMMEDIATELY to prevent user activation token expiration
-      if (track.fileHandle && !trackUrl) {
+      if (track.opfsPath && !trackUrl) {
+         try {
+            const file = await OPFSManager.getFile(track.opfsPath);
+            trackUrl = URL.createObjectURL(file);
+            track.url = trackUrl;
+         } catch(e) {
+            console.error("Failed to load OPFS file", e);
+         }
+      } else if (track.fileHandle && !trackUrl) {
         if (await track.fileHandle.queryPermission({ mode: 'read' }) === 'prompt') {
           await track.fileHandle.requestPermission({ mode: 'read' });
         }

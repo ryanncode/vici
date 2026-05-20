@@ -11,7 +11,8 @@ export const RotaryKnob = ({
   step = 1,
   value,
   onChange,
-  onDoubleClick
+  onDoubleClick,
+  hideLabel = false
 }: { 
   label: string, 
   size?: 'xs' | 'sm' | 'md' | 'lg', 
@@ -21,7 +22,8 @@ export const RotaryKnob = ({
   step?: number,
   value?: number,
   onChange?: (val: number) => void,
-  onDoubleClick?: () => void
+  onDoubleClick?: () => void,
+  hideLabel?: boolean
 }) => {
   const dims = size === 'xs' ? 'w-8 h-8' : size === 'sm' ? 'w-10 h-10' : size === 'md' ? 'w-12 h-12' : 'w-16 h-16';
   const colorMap = {
@@ -93,7 +95,7 @@ export const RotaryKnob = ({
   };
 
   return (
-    <div className="flex flex-col items-center gap-1 my-[3px] relative group">
+    <div className={`flex flex-col items-center relative group ${hideLabel ? '' : 'gap-1 my-[3px]'}`}>
       <div 
         className={`${dims} rounded-full border-2 ${colorMap[color]} shadow-md relative flex items-center justify-center cursor-ns-resize overflow-hidden touch-none`}
         onDoubleClick={onDoubleClick}
@@ -119,7 +121,7 @@ export const RotaryKnob = ({
           className="absolute inset-0 opacity-0 pointer-events-none"
         />
       </div>
-      {label && <span className="text-[9px] font-bold tracking-widest text-slate-500 uppercase pointer-events-none">{label}</span>}
+      {!hideLabel && label && <span className="text-[9px] font-bold tracking-widest text-slate-500 uppercase pointer-events-none">{label}</span>}
     </div>
   );
 };
@@ -306,8 +308,8 @@ export const CenterMixer: React.FC = () => {
 
     const handlePointerMove = (moveEvent: MouseEvent) => {
       const deltaX = moveEvent.clientX - startX;
-      // 160px is the width of the crossfader track
-      let val = initialValue + (deltaX / 160);
+      const trackWidth = crossfadeSliderRef.current?.clientWidth || 160;
+      let val = initialValue + (deltaX / trackWidth);
       val = Math.max(0, Math.min(1, val));
       handleCrossfadeChange({ target: { value: val.toString() } } as unknown as ChangeEvent<HTMLInputElement>);
     };
@@ -324,25 +326,25 @@ export const CenterMixer: React.FC = () => {
 
 
   return (
-    <div className="w-[250px] h-[520px] flex flex-col relative gap-[10px] shrink-0">
+    <div className="w-[200px] h-[480px] flex flex-col relative gap-2 shrink-0">
       
-      {/* Top Section: Channels (420px max height) */}
-      <div className="flex-1 flex justify-between gap-[10px] h-[420px] overflow-hidden">
+      {/* Top Section: Channels */}
+      <div className="flex-1 flex justify-between gap-1 overflow-hidden">
         
         {/* Deck A Channel Strip */}
-        <div className="flex-1 flex flex-col items-center bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 rounded-2xl shadow-md py-2 shrink-0">
+        <div className="flex-1 flex flex-col items-center bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 rounded-xl shadow-md py-1 shrink-0">
           <RotaryKnob label="Gain" size="xs" min={0} max={2} step={0.01} value={deckA.gain} onChange={(v) => handleGainChange('A', v)} onDoubleClick={() => handleGainChange('A', 1.0)} />
-          <div className="w-8 border-b-2 border-slate-200 dark:border-slate-700 my-[2px]"></div>
+          <div className="w-6 border-b-2 border-slate-200 dark:border-slate-700 my-[1px]"></div>
           <RotaryKnob label="High" size="sm" min={-24} max={6} step={0.1} value={deckA.eq.high} onChange={(v) => handleEqChange('A', 'high', v)} onDoubleClick={() => handleEqChange('A', 'high', 0)} />
           <RotaryKnob label="Mid" size="sm" min={-24} max={6} step={0.1} value={deckA.eq.mid} onChange={(v) => handleEqChange('A', 'mid', v)} onDoubleClick={() => handleEqChange('A', 'mid', 0)} />
           <RotaryKnob label="Low" size="sm" min={-24} max={6} step={0.1} value={deckA.eq.low} onChange={(v) => handleEqChange('A', 'low', v)} onDoubleClick={() => handleEqChange('A', 'low', 0)} />
-          <div className="w-8 border-b-2 border-slate-200 dark:border-slate-700 my-[2px]"></div>
-          <RotaryKnob label="Filter" size="md" color="blue" min={-100} max={100} step={1} value={deckA.filter} onChange={(v) => handleFilterChange('A', v)} onDoubleClick={() => handleFilterChange('A', 0)} />
+          <div className="w-6 border-b-2 border-slate-200 dark:border-slate-700 my-[1px]"></div>
+          <RotaryKnob label="Filter" size="sm" color="blue" min={-100} max={100} step={1} value={deckA.filter} onChange={(v) => handleFilterChange('A', v)} onDoubleClick={() => handleFilterChange('A', 0)} />
           
           {/* Fader & VU Block */}
-          <div className="flex items-center gap-3 mt-2 h-[90px]">
+          <div className="flex items-center gap-2 mt-1 h-[120px]">
             <VUMeter deckId="A" />
-            <div className="h-full w-8 bg-slate-100 dark:bg-slate-950 rounded-lg flex justify-center py-1 border border-slate-300 dark:border-slate-900 shadow-inner relative touch-none" onPointerDown={(e) => handleFaderPointerDown(e, 'A', deckA.volume)} onWheel={(e) => handleFaderWheel(e, 'A', deckA.volume)} onDoubleClick={() => handleVolumeChange('A', 1.0)}>
+            <div className="h-full w-6 bg-slate-100 dark:bg-slate-950 rounded-lg flex justify-center py-1 border border-slate-300 dark:border-slate-900 shadow-inner relative touch-none" onPointerDown={(e) => handleFaderPointerDown(e, 'A', deckA.volume)} onWheel={(e) => handleFaderWheel(e, 'A', deckA.volume)} onDoubleClick={() => handleVolumeChange('A', 1.0)}>
               <input 
                 type="range" 
                 min="0" max="1.5" step="0.01" 
@@ -356,7 +358,7 @@ export const CenterMixer: React.FC = () => {
               <div className="w-1 bg-slate-300 dark:bg-slate-900 h-full rounded-full"></div>
               {/* Fader Cap */}
               <div 
-                className="absolute w-full h-6 bg-slate-200 dark:bg-slate-800 border-2 border-slate-400 dark:border-slate-600 rounded flex items-center justify-center shadow-lg pointer-events-none"
+                className="absolute w-full h-5 bg-slate-200 dark:bg-slate-800 border-2 border-slate-400 dark:border-slate-600 rounded flex items-center justify-center shadow-lg pointer-events-none"
                 style={{ bottom: `${(deckA.volume / 1.5) * 100}%`, transform: 'translateY(50%)' }}
               >
                 <div className="w-full h-1 bg-white/60 dark:bg-white/20"></div>
@@ -367,19 +369,19 @@ export const CenterMixer: React.FC = () => {
         </div>
 
         {/* Deck B Channel Strip */}
-        <div className="flex-1 flex flex-col items-center bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 rounded-2xl shadow-md py-2 shrink-0">
+        <div className="flex-1 flex flex-col items-center bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 rounded-xl shadow-md py-1 shrink-0">
           <RotaryKnob label="Gain" size="xs" min={0} max={2} step={0.01} value={deckB.gain} onChange={(v) => handleGainChange('B', v)} onDoubleClick={() => handleGainChange('B', 1.0)} />
-          <div className="w-8 border-b-2 border-slate-200 dark:border-slate-700 my-[2px]"></div>
+          <div className="w-6 border-b-2 border-slate-200 dark:border-slate-700 my-[1px]"></div>
           <RotaryKnob label="High" size="sm" min={-24} max={6} step={0.1} value={deckB.eq.high} onChange={(v) => handleEqChange('B', 'high', v)} onDoubleClick={() => handleEqChange('B', 'high', 0)} />
           <RotaryKnob label="Mid" size="sm" min={-24} max={6} step={0.1} value={deckB.eq.mid} onChange={(v) => handleEqChange('B', 'mid', v)} onDoubleClick={() => handleEqChange('B', 'mid', 0)} />
           <RotaryKnob label="Low" size="sm" min={-24} max={6} step={0.1} value={deckB.eq.low} onChange={(v) => handleEqChange('B', 'low', v)} onDoubleClick={() => handleEqChange('B', 'low', 0)} />
-          <div className="w-8 border-b-2 border-slate-200 dark:border-slate-700 my-[2px]"></div>
-          <RotaryKnob label="Filter" size="md" color="amber" min={-100} max={100} step={1} value={deckB.filter} onChange={(v) => handleFilterChange('B', v)} onDoubleClick={() => handleFilterChange('B', 0)} />
+          <div className="w-6 border-b-2 border-slate-200 dark:border-slate-700 my-[1px]"></div>
+          <RotaryKnob label="Filter" size="sm" color="amber" min={-100} max={100} step={1} value={deckB.filter} onChange={(v) => handleFilterChange('B', v)} onDoubleClick={() => handleFilterChange('B', 0)} />
           
           {/* Fader & VU Block */}
-          <div className="flex items-center gap-3 mt-2 h-[90px]">
+          <div className="flex items-center gap-2 mt-1 h-[120px]">
             <VUMeter deckId="B" />
-            <div className="h-full w-8 bg-slate-100 dark:bg-slate-950 rounded-lg flex justify-center py-1 border border-slate-300 dark:border-slate-900 shadow-inner relative touch-none" onPointerDown={(e) => handleFaderPointerDown(e, 'B', deckB.volume)} onWheel={(e) => handleFaderWheel(e, 'B', deckB.volume)} onDoubleClick={() => handleVolumeChange('B', 1.0)}>
+            <div className="h-full w-6 bg-slate-100 dark:bg-slate-950 rounded-lg flex justify-center py-1 border border-slate-300 dark:border-slate-900 shadow-inner relative touch-none" onPointerDown={(e) => handleFaderPointerDown(e, 'B', deckB.volume)} onWheel={(e) => handleFaderWheel(e, 'B', deckB.volume)} onDoubleClick={() => handleVolumeChange('B', 1.0)}>
               <input 
                 type="range" 
                 min="0" max="1.5" step="0.01" 
@@ -393,7 +395,7 @@ export const CenterMixer: React.FC = () => {
               <div className="w-1 bg-slate-300 dark:bg-slate-900 h-full rounded-full"></div>
               {/* Fader Cap */}
               <div 
-                className="absolute w-full h-6 bg-slate-200 dark:bg-slate-800 border-2 border-slate-400 dark:border-slate-600 rounded flex items-center justify-center shadow-lg pointer-events-none"
+                className="absolute w-full h-5 bg-slate-200 dark:bg-slate-800 border-2 border-slate-400 dark:border-slate-600 rounded flex items-center justify-center shadow-lg pointer-events-none"
                 style={{ bottom: `${(deckB.volume / 1.5) * 100}%`, transform: 'translateY(50%)' }}
               >
                 <div className="w-full h-1 bg-white/60 dark:bg-white/20"></div>
@@ -406,10 +408,10 @@ export const CenterMixer: React.FC = () => {
       </div>
 
       {/* Bottom Section: Crossfader Hub */}
-      <div className="h-[90px] border-2 border-slate-300 dark:border-slate-700 rounded-2xl flex flex-col items-center justify-center bg-white dark:bg-slate-800 shadow-md shrink-0 relative">
-        <span className="text-[9px] font-bold tracking-widest text-slate-500 mb-2 uppercase">Crossfader</span>
+      <div className="h-[60px] border-2 border-slate-300 dark:border-slate-700 rounded-xl flex flex-col items-center justify-center bg-white dark:bg-slate-800 shadow-md shrink-0 relative py-1 px-2">
+        <span className="text-[10px] font-bold tracking-widest text-slate-500 mb-1 uppercase">Crossfader</span>
         
-        <div className="w-[160px] h-10 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-300 dark:border-slate-700 shadow-inner flex items-center px-1 relative touch-none" onPointerDown={(e) => handleCrossfaderPointerDown(e, crossfade)} onWheel={(e) => handleCrossfaderWheel(e, crossfade)} onDoubleClick={() => handleCrossfadeChange({ target: { value: '0.5' } } as unknown as ChangeEvent<HTMLInputElement>)}>
+        <div className="w-full h-8 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-300 dark:border-slate-700 shadow-inner flex items-center px-1 relative touch-none" onPointerDown={(e) => handleCrossfaderPointerDown(e, crossfade)} onWheel={(e) => handleCrossfaderWheel(e, crossfade)} onDoubleClick={() => handleCrossfadeChange({ target: { value: '0.5' } } as unknown as ChangeEvent<HTMLInputElement>)}>
           <input 
             ref={crossfadeSliderRef}
             type="range" 
@@ -423,8 +425,8 @@ export const CenterMixer: React.FC = () => {
           <div className="h-1 bg-slate-300 dark:bg-black rounded-full absolute left-2 right-2"></div>
           {/* Crossfader Cap */}
           <div 
-            className="absolute w-10 h-10 bg-slate-200 dark:bg-slate-800 border-2 border-slate-400 dark:border-slate-600 rounded shadow-xl flex items-center justify-center pointer-events-none transition-none"
-            style={{ left: `calc(${crossfade * 100}% - 20px)` }}
+            className="absolute w-8 h-8 bg-slate-200 dark:bg-slate-800 border-2 border-slate-400 dark:border-slate-600 rounded shadow-xl flex items-center justify-center pointer-events-none transition-none"
+            style={{ left: `calc(${crossfade * 100}% - 16px)` }}
           >
             <div className="w-1 h-full bg-white/60 dark:bg-white/20"></div>
           </div>

@@ -1,11 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import type { TrackMetadata } from '../types/mixer';
-
-export interface Playlist {
-  id: string;
-  name: string;
-  content: string;
-}
+import type { TrackMetadata, Playlist } from '../types/mixer';
 
 export class MixerDatabase extends Dexie {
   tracks!: Table<TrackMetadata>;
@@ -19,6 +13,10 @@ export class MixerDatabase extends Dexie {
     });
     this.version(2).stores({
       tracks: 'id, filePath, artist, title, bpm',
+      playlists: 'id, name'
+    });
+    this.version(3).stores({
+      tracks: 'id, filePath, artist, title, bpm, opfsPath, key, year, energy, genre',
       playlists: 'id, name'
     });
   }
