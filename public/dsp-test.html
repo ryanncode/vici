@@ -18,6 +18,7 @@
         <button id="runIMD">Run IMD Test (60Hz + 7kHz)</button>
         <button id="runSweep">Run Aliasing Sweep (20Hz-24kHz)</button>
         <button id="runDC">Run DC Offset Test (White Noise)</button>
+        <button id="runFX">Run FX Smoke Test (NaN Check)</button>
     </div>
     
     <canvas id="viz" width="800" height="300"></canvas>
@@ -124,15 +125,18 @@
             
             faustNode.connect(analyser);
             
+            // Ensure filter is bypassed to maintain LTI (Linear Time-Invariant) condition
+            faustNode.setParamValue('/engine/filter', 0.0);
+            
             log("Waiting 500ms for DSP smoothing params to settle...");
             
             setTimeout(() => {
-                log("Firing Dirac Impulse...");
+                log("Firing Dirac Impulse (0.5 amplitude to avoid lookahead limiter)...");
                 // Keep source alive for 1 second by making buffer 1 second long
                 // so the worklet doesn't go to sleep before the 10ms lookahead delay exits
                 const impulse = audioCtx.createBuffer(2, audioCtx.sampleRate, audioCtx.sampleRate);
-                impulse.getChannelData(0)[0] = 1.0;
-                impulse.getChannelData(1)[0] = 1.0;
+                impulse.getChannelData(0)[0] = 0.5; // Reduced from 1.0 to avoid limiter compression
+                impulse.getChannelData(1)[0] = 0.5;
 
                 const source = audioCtx.createBufferSource();
                 source.buffer = impulse;
@@ -173,9 +177,12 @@
             
             faustNode.connect(analyser);
             
-            // Set massive +12dB gain to push the limiter hard
-            log("Setting master volume to 4.0 (+12dB) to hit limiter...");
-            faustNode.setParamValue('/engine/volume', 4.0);
+            // Set massive gain to push the limiter hard (combining volume and EQ)
+            log("Setting master volume to 1.5 and EQ to +6dB to hit limiter...");
+            faustNode.setParamValue('/engine/volume', 1.5);
+            faustNode.setParamValue('/engine/eq_low', 6.0);
+            faustNode.setParamValue('/engine/eq_mid', 6.0);
+            faustNode.setParamValue('/engine/eq_high', 6.0);
             
             log("Waiting 500ms for params to settle...");
             
@@ -215,8 +222,12 @@
             
             faustNode.connect(analyser);
             
-            // Push volume to trigger limiting/compression
-            faustNode.setParamValue('/engine/volume', 2.0); 
+            // Push volume and EQ to trigger hard limiting/compression
+            log("Pushing master volume and EQ to heavily trigger the mastering limiter...");
+            faustNode.setParamValue('/engine/volume', 1.5); 
+            faustNode.setParamValue('/engine/eq_low', 6.0);
+            faustNode.setParamValue('/engine/eq_mid', 6.0);
+            faustNode.setParamValue('/engine/eq_high', 6.0);
             
             log("Waiting 500ms for params to settle...");
             
@@ -360,6 +371,69 @@
                 
                 audioCtx.close();
             }, 1000);
+        };
+        // --- 4. FX Smoke Test (NaN Check) ---
+        document.getElementById('runFX').onclick = async () => {
+            output.textContent = '';
+            log("--- Running FX Smoke Test (NaN Check) ---");
+            
+            const audioCtx = new AudioContext({ sampleRate: 48000 });
+            const faustNode = await initFaust(audioCtx);
+            
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 2048;
+            
+            faustNode.connect(analyser);
+            
+            log("Turning on all FX (Phaser, Roll, Gate, Compressor, Siren, Noise)...");
+            faustNode.setParamValue('/engine/fx_phaser_on', 1);
+            faustNode.setParamValue('/engine/fx_roll_on', 1);
+            faustNode.setParamValue('/engine/fx_gate_on', 1);
+            faustNode.setParamValue('/engine/fx_compressor_on', 1);
+            faustNode.setParamValue('/engine/fx_siren_on', 1);
+            faustNode.setParamValue('/engine/fx_noise_on', 1);
+            
+            log("Sending White Noise through FX chain...");
+            const bufferSize = audioCtx.sampleRate * 2;
+            const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const outputData = noiseBuffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                outputData[i] = Math.random() * 2 - 1;
+            }
+
+            const whiteNoise = audioCtx.createBufferSource();
+            whiteNoise.buffer = noiseBuffer;
+            whiteNoise.loop = true;
+            whiteNoise.connect(faustNode);
+            whiteNoise.start(0);
+
+            setTimeout(() => {
+                const timeData = new Float32Array(analyser.fftSize);
+                analyser.getFloatTimeDomainData(timeData);
+                
+                let hasNaN = false;
+                let isSilent = true;
+                
+                for (let i = 0; i < timeData.length; i++) {
+                    if (Number.isNaN(timeData[i]) || !Number.isFinite(timeData[i])) {
+                        hasNaN = true;
+                        break;
+                    }
+                    if (Math.abs(timeData[i]) > 0.001) {
+                        isSilent = false;
+                    }
+                }
+                
+                if (hasNaN) {
+                    log("CRITICAL FAILURE: NaN or Infinity detected in audio output. Engine crashed!");
+                } else if (isSilent) {
+                    log("WARNING: Output is completely silent. Check routing.");
+                } else {
+                    log("SUCCESS: Engine survived complex FX stress test. No NaNs detected.");
+                }
+                
+                audioCtx.close();
+            }, 1500);
         };
     </script>
 </body>

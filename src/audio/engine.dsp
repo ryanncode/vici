@@ -237,13 +237,16 @@ with {
     ceiling = 0.98;
     abs_sig = max(abs(l), abs(r));
     
-    peak_env = abs_sig : an.amp_follower_ar(0.0, 0.200);
+    // 2ms attack prevents instant waveform tracking. 1000ms release flattens low-frequency envelope ripple.
+    peak_env = abs_sig : an.amp_follower_ar(0.002, 1.000);
     
     gr_raw = min(1.0, ceiling / max(0.0001, peak_env));
     
-    gr_smooth = gr_raw : fi.lowpass(1, 15.0);
+    // 2-pole lowpass filter provides 12dB/oct steeper ripple rejection. 
+    // A 15Hz 2-pole Butterworth naturally has a group delay of exactly 15.0 milliseconds.
+    gr_smooth = gr_raw : fi.lowpass(2, 15.0);
     
-    lookahead_samps = int(0.010 * ma.SR);
+    lookahead_samps = int(0.015 * ma.SR);
     l_delayed = l : de.delay(ma.SR, lookahead_samps);
     r_delayed = r : de.delay(ma.SR, lookahead_samps);
     
