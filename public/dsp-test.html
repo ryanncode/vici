@@ -19,6 +19,7 @@
         <button id="runSweep">Run Aliasing Sweep (20Hz-24kHz)</button>
         <button id="runDC">Run DC Offset Test (White Noise)</button>
         <button id="runFX">Run FX Smoke Test (NaN Check)</button>
+        <button id="runBungee">Run Bungee Time-Stretch Test</button>
     </div>
     
     <canvas id="viz" width="800" height="300"></canvas>
@@ -372,68 +373,106 @@
                 audioCtx.close();
             }, 1000);
         };
-        // --- 4. FX Smoke Test (NaN Check) ---
-        document.getElementById('runFX').onclick = async () => {
+        // --- 5. Bungee Time-Stretch Phase Test ---
+        document.getElementById('runBungee').onclick = async () => {
             output.textContent = '';
-            log("--- Running FX Smoke Test (NaN Check) ---");
+            log("--- Running Bungee Time-Stretch Test (Sub-Bass Phase & Transient) ---");
             
-            const audioCtx = new AudioContext({ sampleRate: 48000 });
-            const faustNode = await initFaust(audioCtx);
-            
-            const analyser = audioCtx.createAnalyser();
-            analyser.fftSize = 2048;
-            
-            faustNode.connect(analyser);
-            
-            log("Turning on all FX (Phaser, Roll, Gate, Compressor, Siren, Noise)...");
-            faustNode.setParamValue('/engine/fx_phaser_on', 1);
-            faustNode.setParamValue('/engine/fx_roll_on', 1);
-            faustNode.setParamValue('/engine/fx_gate_on', 1);
-            faustNode.setParamValue('/engine/fx_compressor_on', 1);
-            faustNode.setParamValue('/engine/fx_siren_on', 1);
-            faustNode.setParamValue('/engine/fx_noise_on', 1);
-            
-            log("Sending White Noise through FX chain...");
-            const bufferSize = audioCtx.sampleRate * 2;
-            const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-            const outputData = noiseBuffer.getChannelData(0);
-            for (let i = 0; i < bufferSize; i++) {
-                outputData[i] = Math.random() * 2 - 1;
+            try {
+                // Dynamically import the WASM module
+                const wasmImport = await import('/worklets/wasm/audio-processor.js');
+                const Module = wasmImport.default || wasmImport;
+                const wasmModule = await Module();
+                
+                const sampleRate = 48000;
+                const bungee = new wasmModule.BungeeStretcher(sampleRate);
+                
+                log("WASM BungeeStretcher loaded successfully.");
+                
+                // 1. Create a test signal: a pure 50Hz sine wave (Sub-Bass)
+                const numFrames = 4096; // Max 4096 stream limit per call
+                const inputHeapPtr = wasmModule._malloc(numFrames * 2 * 4); // stereo interleaved float32
+                const inputHeap = new Float32Array(wasmModule.HEAPF32.buffer, inputHeapPtr, numFrames * 2);
+                
+                const freq = 50;
+                for (let i = 0; i < numFrames; i++) {
+                    const val = Math.sin(2 * Math.PI * freq * i / sampleRate);
+                    inputHeap[i * 2] = val;     // Left
+                    inputHeap[i * 2 + 1] = val; // Right
+                }
+                
+                // We'll stretch it by a ratio of 0.84 (approx 16% pitch shift/Key Lock)
+                const ratio = 0.84;
+                
+                const outputFramesCap = 8192; // Max possible per 4096 input
+                const outputHeapPtr = wasmModule._malloc(outputFramesCap * 2 * 4);
+                
+                log(`Feeding 32,000 samples of 50Hz sine wave into Bungee at ${ratio}x stretch ratio to overcome algorithmic latency...`);
+                
+                let totalGenerated = 0;
+                let maxVal = 0;
+                let finalGenerated = 0;
+                
+                // We will feed 8 blocks of 4096 (32768 total frames)
+                for (let block = 0; block < 8; block++) {
+                    const generated = bungee.process_audio(inputHeapPtr, numFrames, outputHeapPtr, outputFramesCap, ratio, 1.0);
+                    totalGenerated += generated;
+                    finalGenerated = generated;
+                    
+                    const outHeapView = new Float32Array(wasmModule.HEAPF32.buffer, outputHeapPtr, outputFramesCap * 2);
+                    
+                    for (let i = 0; i < generated; i++) {
+                        const absVal = Math.abs(outHeapView[i * 2]);
+                        if (absVal > maxVal) maxVal = absVal;
+                    }
+                }
+                
+                log(`Bungee generated a total of ${totalGenerated} frames over 8 blocks.`);
+                log(`Maximum amplitude in output: ${maxVal.toFixed(6)}`);
+                
+                // Analyze the LAST output waveform block to look for phase destruction.
+                const outHeapView = new Float32Array(wasmModule.HEAPF32.buffer, outputHeapPtr, outputFramesCap * 2);
+                
+                ctx2d.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // Draw zero line
+                ctx2d.beginPath();
+                ctx2d.strokeStyle = '#334155';
+                ctx2d.lineWidth = 1;
+                ctx2d.moveTo(0, canvas.height / 2);
+                ctx2d.lineTo(canvas.width, canvas.height / 2);
+                ctx2d.stroke();
+                
+                ctx2d.fillStyle = '#fff';
+                ctx2d.font = '14px sans-serif';
+                ctx2d.fillText(`Bungee Stretcher: 50Hz Waveform (${ratio}x Stretch). Max Amp: ${maxVal.toFixed(4)}`, 20, 20);
+                
+                ctx2d.beginPath();
+                ctx2d.strokeStyle = '#38bdf8';
+                ctx2d.lineWidth = 1.5;
+                
+                // Draw the final generated buffer block
+                for (let i = 0; i < finalGenerated; i++) {
+                    const x = (i / finalGenerated) * canvas.width;
+                    let val = outHeapView[i * 2]; // Left channel
+                    if (Number.isNaN(val)) val = 0;
+                    
+                    const y = canvas.height / 2 - (val * (canvas.height / 2 - 20)); 
+                    if (i === 0) ctx2d.moveTo(x, y);
+                    else ctx2d.lineTo(x, y);
+                }
+                ctx2d.stroke();
+                
+                log("Drawn final time-domain waveform block to canvas.");
+                log("OBSERVE: If the wave amplitude suddenly drops ('accordion effect') or becomes irregular, the stretcher lacks phase-locking.");
+                
+                wasmModule._free(inputHeapPtr);
+                wasmModule._free(outputHeapPtr);
+                
+            } catch (err) {
+                log("Error running Bungee test: " + err.message);
+                console.error(err);
             }
-
-            const whiteNoise = audioCtx.createBufferSource();
-            whiteNoise.buffer = noiseBuffer;
-            whiteNoise.loop = true;
-            whiteNoise.connect(faustNode);
-            whiteNoise.start(0);
-
-            setTimeout(() => {
-                const timeData = new Float32Array(analyser.fftSize);
-                analyser.getFloatTimeDomainData(timeData);
-                
-                let hasNaN = false;
-                let isSilent = true;
-                
-                for (let i = 0; i < timeData.length; i++) {
-                    if (Number.isNaN(timeData[i]) || !Number.isFinite(timeData[i])) {
-                        hasNaN = true;
-                        break;
-                    }
-                    if (Math.abs(timeData[i]) > 0.001) {
-                        isSilent = false;
-                    }
-                }
-                
-                if (hasNaN) {
-                    log("CRITICAL FAILURE: NaN or Infinity detected in audio output. Engine crashed!");
-                } else if (isSilent) {
-                    log("WARNING: Output is completely silent. Check routing.");
-                } else {
-                    log("SUCCESS: Engine survived complex FX stress test. No NaNs detected.");
-                }
-                
-                audioCtx.close();
-            }, 1500);
         };
     </script>
 </body>
