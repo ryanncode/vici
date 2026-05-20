@@ -233,9 +233,32 @@ Activating Key Lock will immediately and permanently:
 
 ---
 
-## 7. DSP Verification Pipeline (`dsp-test.html`)
+## 7. Advanced Phase Synchronization & Quantized Play
 
-To objectively guarantee the integrity of the math outlined above, Vici features a standalone DSP verification pipeline located at `public/dsp-test.html`.
+To guarantee seamless beatmatching and prevent the harsh audio "pops" that occur when instantly shifting a playhead position, Vici employs a continuous Phase Synchronization engine.
+
+### 7.1 Essentia.js Transient Extraction
+During the `metadata.worker.ts` analysis phase, the raw `Float32Array` PCM audio is streamed into the Essentia.js WebAssembly core. The `RhythmExtractor2013` algorithm computes the Spectral Flux of the file to discover the true, mathematically precise BPM and the exact `firstBeatOffset` (e.g., exactly when the first kick drum impacts).
+
+### 7.2 The Phase Alignment Math
+When the user engages `SYNC`, or hits `PLAY` or `SEEK` while SYNC is active, Vici evaluates the exact fractional beat position (phase) of both tracks:
+
+```javascript
+const beatsOther = (timeOther - firstBeatOther) / (60 / otherDeckEngine.originalBpm);
+const phaseOther = ((beatsOther % 1.0) + 1.0) % 1.0;
+```
+
+The system calculates the shortest path `phaseDiff` to match the Master deck's phase, meaning a deck will never jump more than exactly `0.5` beats forward or backward.
+
+### 7.3 Micro-Acceleration Nudge Engine
+Instead of executing a hard seek, the calculated `phaseDiff` is converted into track frames and passed to `track-processor.js` via the `NUDGE` command.
+The `AudioWorklet` processor dynamically alters the mathematical resampling ratio by up to `5%` (e.g., `ratio += 0.05`). This functions exactly like a DJ gently dragging their finger on a vinyl record platter, smoothly micro-accelerating or decelerating the audio until the exact frame offset is absorbed, guaranteeing that the kick drums align sub-millisecond perfectly without any digital clipping or discontinuities.
+
+---
+
+## 8. DSP Verification Pipeline (`dsp-test.html`)
+
+To objectively guarantee the integrity of the math outlined above, Vici features a standalone DSP verification pipeline located at `public/dsp-test.html` and `public/full-chain-test.html`.
 
 Running the test suite instantiates the `FaustMonoDspGenerator` inside a dedicated `AudioContext` isolated from UI render loops.
 1. **Impulse Response Test:** Fires a Dirac Delta impulse (`1.0` followed by `0.0`) through the engine. An embedded `AnalyserNode` performs a Fast Fourier Transform (FFT) and plots the exact Frequency Response curve onto an HTML Canvas. This mathematically proves the perfectly flat magnitude summation of the Linkwitz-Riley Isolator crossovers.

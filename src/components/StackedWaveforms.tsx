@@ -84,15 +84,19 @@ const OverviewWaveform: React.FC<WaveformProps> = React.memo(({
     let fillG = rgb.g;
     let fillB = rgb.b;
     
-    // The user specifically noted that Deck B's Cyan (#06b6d4) was too bright in Light Mode.
-    // Deck A's Blue (#3b82f6) was perfect. We gently darken just Deck B here.
-    if (!isDark && deckId === 'B') {
-      fillR = Math.floor(rgb.r * 0.75);
-      fillG = Math.floor(rgb.g * 0.75);
-      fillB = Math.floor(rgb.b * 0.75);
+    if (!isDark) {
+      if (deckId === 'B') {
+        fillR = Math.floor(fillR + (255 - fillR) * 0.55);
+        fillG = Math.floor(fillG + (255 - fillG) * 0.55);
+        fillB = Math.floor(fillB + (255 - fillB) * 0.55);
+      } else {
+        fillR = Math.floor(fillR + (255 - fillR) * 0.40);
+        fillG = Math.floor(fillG + (255 - fillG) * 0.40);
+        fillB = Math.floor(fillB + (255 - fillB) * 0.40);
+      }
     }
     
-    const opacity = isDark ? 0.3 : 0.4;
+    const opacity = isDark ? 0.2 : 0.10;
     ctx.fillStyle = `rgba(${fillR}, ${fillG}, ${fillB}, ${opacity})`;
 
     for (let i = 0; i < peaks.length; i++) {
@@ -248,6 +252,7 @@ const OverviewWaveform: React.FC<WaveformProps> = React.memo(({
 
 interface ZoomWaveformProps extends WaveformProps {
   bpm?: number;
+  firstBeatOffset?: number;
 }
 
 const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
@@ -259,6 +264,7 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
   outroMarker,
   color,
   bpm,
+  firstBeatOffset,
   onSeek,
   onMarkerChange
 }) => {
@@ -339,15 +345,18 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
       if (bpm && bpm > 0) {
         const beatInterval = 60 / bpm; // seconds per beat
         
-        ctx.strokeStyle = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)'; // Lower contrast
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)'; // Even lower contrast
+        ctx.lineWidth = 1; // Thinner lines
         
+        const offset = firstBeatOffset || 0;
+        const adjustedLeftEdge = timeAtLeftEdge - offset;
+
         // Find the first beat time that is visible on the left edge
-        const firstVisibleBeatIdx = Math.floor(timeAtLeftEdge / beatInterval);
+        const firstVisibleBeatIdx = Math.floor(adjustedLeftEdge / beatInterval);
         
         ctx.beginPath();
         for (let i = firstVisibleBeatIdx; ; i++) {
-          const beatTime = i * beatInterval;
+          const beatTime = offset + i * beatInterval;
           const x = (beatTime - timeAtLeftEdge) * pixelsPerSecond;
           
           if (x > width) break;
@@ -398,17 +407,13 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
       const endPeakIdx = Math.min(peaks.length, Math.ceil((currentTime + (currentZoomTimeWindow / 2)) * peaksPerSecond));
       
       if (bandPeaks && bandPeaks.length === peaks.length * 3) {
-        // 3-Band Coloration Mode via Canvas Compositing
-        ctx.globalCompositeOperation = isDark ? 'lighter' : 'multiply';
+        ctx.globalCompositeOperation = isDark ? 'source-over' : 'multiply';
         
         const colors = isDark 
-          ? { l: '#3b82f6', m: '#a855f7', h: '#22c55e' } // Blue, Purple, Green
-          : { l: '#1d4ed8', m: '#7e22ce', h: '#15803d' }; // Deep Blue, Deep Purple, Deep Green
+          ? { l: '#3b82f6', m: '#6366f1', h: '#2dd4bf' }
+          : { l: '#93c5fd', m: '#d8b4fe', h: '#86efac' };
 
-        // The rest of the UI uses opacity/alpha for active states (e.g., bg-blue-500/60).
-        // By setting globalAlpha here, we prevent the waveform from looking overwhelmingly 
-        // bright or high-contrast compared to the softer performance pads.
-        ctx.globalAlpha = 0.65;
+        ctx.globalAlpha = isDark ? 0.45 : 0.65;
 
         // Low Band (Bass)
         ctx.fillStyle = colors.l;
@@ -472,7 +477,7 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
 
     animationFrameId = requestAnimationFrame(drawZoomedWaveform);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [peaks, segments, color, deckId, zoomTimeWindow, bpm, introMarker, outroMarker, bandPeaks, isDark]);
+  }, [peaks, segments, color, deckId, zoomTimeWindow, bpm, firstBeatOffset, introMarker, outroMarker, bandPeaks, isDark]);
 
   const onMarkerChangeRef = useRef(onMarkerChange);
   useEffect(() => {
@@ -575,7 +580,7 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
 
       {/* Static Central Playhead */}
       <div 
-        className="absolute top-0 bottom-0 w-[2px] bg-[#dce3ec] dark:bg-slate-500/70 z-20 pointer-events-none"
+        className="absolute top-0 bottom-0 w-[2px] bg-white dark:bg-white/90 z-20 pointer-events-none drop-shadow-[0_0_2px_rgba(0,0,0,0.5)]"
         style={{ left: '50%', transform: 'translateX(-50%)' }}
       />
     </div>
@@ -637,6 +642,7 @@ export const StackedWaveforms: React.FC = () => {
               introMarker={deckA.introMarker}
               outroMarker={deckA.outroMarker}
               bpm={deckA.track.bpm}
+              firstBeatOffset={deckA.track.firstBeatOffset}
               color="#3b82f6"
               onSeek={handleSeekA}
               onMarkerChange={handleMarkerChangeA}
@@ -661,6 +667,7 @@ export const StackedWaveforms: React.FC = () => {
               introMarker={deckB.introMarker}
               outroMarker={deckB.outroMarker}
               bpm={deckB.track.bpm}
+              firstBeatOffset={deckB.track.firstBeatOffset}
               color="#06b6d4"
               onSeek={handleSeekB}
               onMarkerChange={handleMarkerChangeB}

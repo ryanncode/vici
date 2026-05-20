@@ -227,12 +227,15 @@ async function decodeMp3(buffer: ArrayBuffer) {
 
 function generatePeaksAndMetadata(channelData: Float32Array[], sampleRate: number) {
   const leftChannel = channelData[0];
-  const numPeaks = 1000;
+  const fs = sampleRate || 44100;
+  const duration = leftChannel.length / fs;
+  // Use a dynamic resolution of 60 peaks per second to avoid temporal quantization errors
+  // Minimum of 1000 peaks for very short sounds.
+  const numPeaks = Math.max(1000, Math.floor(duration * 60));
   const blockSize = Math.floor(leftChannel.length / numPeaks);
   const peaks = new Float32Array(numPeaks);
   const bandPeaks = new Float32Array(numPeaks * 3);
   
-  const fs = sampleRate || 44100;
   // Lowpass Alpha for 250Hz
   const alpha_low = 1 / (1 + fs / (2 * Math.PI * 250));
   // Highpass Alpha for 2.5kHz (Note: formula is 1 / (1 + 2pi*fc/fs))

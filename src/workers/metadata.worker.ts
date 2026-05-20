@@ -205,7 +205,7 @@ self.onmessage = async (e: MessageEvent<{ type?: string, jobId: string, file?: F
       if (isPrecomputedPeaks) {
         peaks = audioData;
       } else {
-        const numPeaks = 1000;
+        const numPeaks = Math.max(1000, Math.floor(duration * 60));
         const blockSize = Math.floor(audioData.length / numPeaks);
         peaks = new Float32Array(numPeaks);
         
@@ -233,7 +233,7 @@ self.onmessage = async (e: MessageEvent<{ type?: string, jobId: string, file?: F
       // Generate 3-band peaks for coloring (Low, Mid, High interleaved)
       let bandPeaks = new Float32Array(0);
       if (!isPrecomputedPeaks) {
-        const numPeaks = 1000;
+        const numPeaks = Math.max(1000, Math.floor(duration * 60));
         const blockSize = Math.floor(audioData.length / numPeaks);
         bandPeaks = new Float32Array(numPeaks * 3);
         
