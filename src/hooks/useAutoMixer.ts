@@ -70,10 +70,10 @@ export function useAutoMixer({ library, isAutomixEnabled, onTransitionStart, onT
           const currentTrackId = deckState.track?.id;
           let nextIndex = 0;
           if (currentTrackId) {
-            const currentIndex = library.findIndex(t => t.id === currentTrackId);
-            if (currentIndex !== -1 && currentIndex + 1 < library.length) nextIndex = currentIndex + 1;
+            const currentIndex = latestProps.current.library.findIndex(t => t.id === currentTrackId);
+            if (currentIndex !== -1 && currentIndex + 1 < latestProps.current.library.length) nextIndex = currentIndex + 1;
           }
-          const nextTrack = oppositeDeckState.track || library[nextIndex];
+          const nextTrack = oppositeDeckState.track || latestProps.current.library[nextIndex];
           
           if (nextTrack && nextTrack.bpm) {
             const nextBpm = nextTrack.bpm;
@@ -461,7 +461,7 @@ export function useAutoMixer({ library, isAutomixEnabled, onTransitionStart, onT
           }
 
           if (progress < 1) {
-            requestAnimationFrame(animateTransition);
+            setTimeout(animateTransition, 20);
           } else {
              // Reset EQs and FX on completion just in case
              if (automixBars === 4 || automixBars === 8) {
@@ -485,7 +485,7 @@ export function useAutoMixer({ library, isAutomixEnabled, onTransitionStart, onT
              onTransitionComplete(nextDeckId, nextTrack!);
           }
         };
-        requestAnimationFrame(animateTransition);
+        setTimeout(animateTransition, 20);
       } catch (err) {
         console.error("AutoMixer Transition Failed:", err);
         isTransitioning.current = false;
