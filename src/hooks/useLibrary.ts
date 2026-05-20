@@ -124,6 +124,7 @@ export function useLibrary() {
       trackIds: newIds
     });
 
+    setActiveCrateId(playlistId);
     store.setSessionHandles(prev => ({ ...prev, ...newHandles }));
     store.setActiveSessionTrackIds(prev => Array.from(new Set([...prev, ...newIds])));
     store.setSessionStarted(true);
@@ -174,6 +175,15 @@ export function useLibrary() {
              }
           }
           
+          const playlistName = handles[0].name.split('/')[0] || `Folder ${new Date().toLocaleDateString()}`;
+          const playlistId = `playlist-${Date.now()}`;
+          await db.playlists.put({
+            id: playlistId,
+            name: playlistName,
+            trackIds: newIds
+          });
+          
+          setActiveCrateId(playlistId);
           store.setSessionHandles(prev => ({ ...prev, ...newHandles }));
           store.setActiveSessionTrackIds(prev => Array.from(new Set([...prev, ...newIds])));
           store.setSessionStarted(true);
@@ -240,6 +250,15 @@ export function useLibrary() {
       }
     }
 
+    const playlistName = `Folder ${new Date().toLocaleDateString()}`;
+    const playlistId = `playlist-${Date.now()}`;
+    await db.playlists.put({
+      id: playlistId,
+      name: playlistName,
+      trackIds: newIds
+    });
+
+    setActiveCrateId(playlistId);
     store.setSessionHandles(prev => ({ ...prev, ...newHandles }));
     store.setActiveSessionTrackIds(prev => Array.from(new Set([...prev, ...newIds])));
     store.setSessionStarted(true);

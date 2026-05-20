@@ -1554,7 +1554,8 @@ var TrackProcessor = class extends AudioWorkletProcessor {
     this.trackSampleRate = sampleRate;
     this.ringBuffer = null;
     this.localBuffer = null;
-    this.localCapacity = 131072;
+    this.localCapacity = 4194304;
+    this.localMask = this.localCapacity - 1;
     this.expectedPullFrame = 0;
     this.isStreaming = false;
     this.fullBuffer = null;
@@ -1672,7 +1673,7 @@ var TrackProcessor = class extends AudioWorkletProcessor {
         const pulledFrames = pulledSamples / 2;
         for (let i = 0; i < pulledFrames; i++) {
           const globalFrame = Math.floor(this.expectedPullFrame + i);
-          const idx = globalFrame % this.localCapacity * 2;
+          const idx = (globalFrame & this.localMask) * 2;
           this.localBuffer[idx] = tempBuffer[i * 2];
           this.localBuffer[idx + 1] = tempBuffer[i * 2 + 1];
         }
@@ -1684,7 +1685,7 @@ var TrackProcessor = class extends AudioWorkletProcessor {
       if (idx < 0 || idx >= bufferLength) return [0, 0];
       if (this.isStreaming) {
         if (idx < this.expectedPullFrame - this.localCapacity || idx >= this.expectedPullFrame) return [0, 0];
-        const lidx = idx % this.localCapacity * 2;
+        const lidx = (idx & this.localMask) * 2;
         return [this.localBuffer[lidx], this.localBuffer[lidx + 1]];
       } else {
         return [this.fullBuffer[0][idx], this.fullBuffer[1][idx]];
@@ -1707,8 +1708,16 @@ var TrackProcessor = class extends AudioWorkletProcessor {
       }
       const generated = this.bungee.process_audio(this.inputPtr, inputFrames, this.outputPtr, outputFrames, ratio, 1);
       for (let i = 0; i < generated; i++) {
-        if (channelCount > 0) output[0][i] = this.outputHeap[i * 2];
-        if (channelCount > 1) output[1][i] = this.outputHeap[i * 2 + 1];
+        if (channelCount > 0) {
+          let val = this.outputHeap[i * 2];
+          if (val !== val || val > 10 || val < -10) val = 0;
+          output[0][i] = val;
+        }
+        if (channelCount > 1) {
+          let val = this.outputHeap[i * 2 + 1];
+          if (val !== val || val > 10 || val < -10) val = 0;
+          output[1][i] = val;
+        }
       }
       for (let i = generated; i < outputFrames; i++) {
         if (channelCount > 0) output[0][i] = 0;
@@ -1730,8 +1739,16 @@ var TrackProcessor = class extends AudioWorkletProcessor {
       }
       const consumed = this.resampler.process_audio_simd(this.inputPtr, inputFramesNeeded, this.outputPtr, outputFrames, ratio);
       for (let i = 0; i < outputFrames; i++) {
-        if (channelCount > 0) output[0][i] = this.outputHeap[i * 2];
-        if (channelCount > 1) output[1][i] = this.outputHeap[i * 2 + 1];
+        if (channelCount > 0) {
+          let val = this.outputHeap[i * 2];
+          if (val !== val || val > 10 || val < -10) val = 0;
+          output[0][i] = val;
+        }
+        if (channelCount > 1) {
+          let val = this.outputHeap[i * 2 + 1];
+          if (val !== val || val > 10 || val < -10) val = 0;
+          output[1][i] = val;
+        }
       }
       this.playhead = Math.floor(this.playhead) + consumed;
     }

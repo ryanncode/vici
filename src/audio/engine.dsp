@@ -1,5 +1,9 @@
 import("stdfaust.lib");
 
+// --- Utilities ---
+// Anti-Denormal protection: Add a tiny imperceptible DC offset to prevent IIR filters from processing subnormals
+denormal_dc = 1e-15;
+
 // --- UI Controls ---
 pitch_rate = hslider("pitch", 1.0, 0.5, 2.0, 0.001);
 
@@ -88,9 +92,6 @@ with {
     c = filter_color / 100.0; // -1.0 to 1.0
     abs_c = abs(c);
     
-    // When dead center, pass perfectly clean signal. 
-    // Otherwise apply filter 100% wet.
-    
     // HP: 20Hz -> 20kHz
     hp_freq = 20.0 * (1000.0 ^ abs_c);
     
@@ -100,7 +101,6 @@ with {
     Q = 0.707 + (abs_c * 1.5);
     drive = abs_c * 0.8; // Introduce Crunch as filter opens
     
-    // If c < 0, it's LP. If c > 0, it's HP. If c == 0, bypass.
     is_lp = c < -0.01;
     is_hp = c > 0.01;
     is_bypass = (is_lp == 0) & (is_hp == 0);
@@ -140,7 +140,7 @@ with {
 };
 
 // 3. Phaser
-phaser_fx(l, r) = l, r <: (*(1-wet), *(1-wet)), (pf.phaser2_stereo(4, 0, 100, 2, 8000, fx_phaser_rate, 1.0, 0.5, 0) : *(wet), *(wet)) :> _,_
+phaser_fx(l, r) = l, r <: (*(1-wet), *(1-wet)), (pf.phaser2_stereo(4, 2, 100, 2, 8000, fx_phaser_rate, 1.0, 0.5, 0) : *(wet), *(wet)) :> _,_
 with {
     wet = fx_phaser_on;
 };
@@ -178,7 +178,6 @@ with {
     roll_l = rwtable(table_size, 0.0, int(write_idx), l, int(read_idx));
     roll_r = rwtable(table_size, 0.0, int(write_idx), r, int(read_idx));
     
-    // To prevent clicking when looping, we can apply a small envelope dip at the loop point
     dip_samps = max(1, int(0.002 * ma.SR));
     env_dip = (run_counter > dip_samps) & (run_counter < (cap_samps - dip_samps));
     fast_smoo = si.smooth(ba.tau2pole(0.002));
@@ -192,25 +191,13 @@ with {
 siren_fx(l, r) = l_out, r_out
 with {
     wet = fx_siren_on;
-    
-    // LFO (Modulator)
-    lfo = os.lf_triangle(2.0) * 0.5 + 0.5; // 2Hz
-    
-    // FM: LFO modulates VCO frequency
+    lfo = os.lf_triangle(2.0) * 0.5 + 0.5;
     freq = 300.0 + lfo * 500.0;
-    
-    // Square wave oscillator (Carrier)
     siren_sig = os.square(freq) * 0.2;
-    
-    // VCA Envelope
     env = en.adsr(0.05, 0.1, 0.8, 0.5, wet);
     siren_dry = siren_sig * env;
-    
-    // Dedicated tape echo path: fdelay with high feedback and lowpass filter
     siren_echo(x) = x : + ~ (de.fdelay(ma.SR*4, ma.SR * 0.375) : *(0.75) : fi.lowpass(1, 4000));
-    
     siren_sound = siren_dry : siren_echo;
-    
     l_out = l + siren_sound;
     r_out = r + siren_sound;
 };
@@ -236,7 +223,7 @@ noise_fx(l, r) = l_out, r_out
 with {
     wet = fx_noise_on;
     pink = no.pink_noise * 0.2;
-    sweep_freq = 200.0 * (75.0 ^ fx_noise_sweep); // 200 to 15000
+    sweep_freq = 200.0 * (75.0 ^ fx_noise_sweep);
     bp_noise = pink : fi.svf.bp(sweep_freq, 4.0);
     noise_sig = bp_noise * wet;
     l_out = l + noise_sig;
@@ -250,22 +237,12 @@ with {
     ceiling = 0.98;
     abs_sig = max(abs(l), abs(r));
     
-    // STAGE 1: Peak Detection
-    // 0ms attack catches the peak instantly. 200ms release holds the basic shape.
     peak_env = abs_sig : an.amp_follower_ar(0.0, 0.200);
     
-    // STAGE 2: Gain Reduction Calculation (Division AFTER smoothing)
     gr_raw = min(1.0, ceiling / max(0.0001, peak_env));
     
-    // STAGE 3: Anti-Ripple Control Filter
-    // A 15Hz 1-pole lowpass filter chemically annihilates any remaining 2kHz zero-crossing 
-    // ripple from the envelope, turning the multiplier into a perfectly flat, DC-like signal.
     gr_smooth = gr_raw : fi.lowpass(1, 15.0);
     
-    // STAGE 4: Group Delay Compensation
-    // A 15Hz 1-pole lowpass filter naturally delays a signal by exactly 10.6 milliseconds.
-    // By delaying the audio by exactly 10ms, the audio transient strikes at the EXACT 
-    // mathematical nadir of the smoothed gain reduction valley.
     lookahead_samps = int(0.010 * ma.SR);
     l_delayed = l : de.delay(ma.SR, lookahead_samps);
     r_delayed = r : de.delay(ma.SR, lookahead_samps);
@@ -274,4 +251,5 @@ with {
     r_out = r_delayed * gr_smooth;
 };
 
-process = eq : phaser_fx : roll_fx : gate_fx : compressor_fx : dj_filter : *(volume), *(volume) : delay_fx : reverb_fx : siren_fx : noise_fx : master_limiter;
+// Main processing chain with input sanitization!
+process = (+ (denormal_dc), + (denormal_dc)) : eq : phaser_fx : roll_fx : gate_fx : compressor_fx : dj_filter : *(volume), *(volume) : delay_fx : reverb_fx : siren_fx : noise_fx : master_limiter : (- (denormal_dc), - (denormal_dc));

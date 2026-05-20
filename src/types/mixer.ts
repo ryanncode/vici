@@ -25,6 +25,7 @@ export interface TrackMetadata {
   replayGain?: number;
   energy?: number;
   matchScore?: number;
+  firstBeatOffset?: number;
   // Non-indexed properties
   albumArt?: Blob;
   waveformPeaks?: Float32Array;
@@ -54,6 +55,7 @@ export interface Track {
   replayGain?: number;
   energy?: number;
   matchScore?: number;
+  firstBeatOffset?: number;
   url: string; // Dynamic Object URL or local asset path
   waveformPeaks?: Float32Array;
   bandPeaks?: Float32Array;

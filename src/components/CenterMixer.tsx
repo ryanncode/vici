@@ -181,10 +181,18 @@ export const CenterMixer: React.FC = () => {
   
   const crossfadeSliderRef = useRef<HTMLInputElement>(null);
 
+  const throttleState = useRef<{ [key: string]: boolean }>({});
+
   const throttledDSP = (_key: string, fn: () => void) => {
-    // We removed the 32ms throttle to achieve 10-millisecond latency benchmark targeted by Chrome M136
-    // Audio Worklet parameters are passed synchronously to avoid React render lifecycle delays.
-    fn();
+    // Re-enable ~30fps throttle (32ms) to prevent message port flooding when aggressively turning knobs
+    // Using a simple timeout-based throttle strategy
+    if (!throttleState.current[_key]) {
+      throttleState.current[_key] = true;
+      fn();
+      setTimeout(() => {
+        throttleState.current[_key] = false;
+      }, 32);
+    }
   };
 
   const throttledSetDeckState = (deckId: 'A' | 'B', key: string, value: number) => {

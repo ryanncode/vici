@@ -1,9 +1,30 @@
 // Polyfill window for music-metadata which checks for browser environments
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).window = globalThis;
+(globalThis as any).module = { exports: {} };
 
 import * as mm from 'music-metadata';
 import type { TrackMetadata } from '../types/mixer';
+
+let essentia: any = null;
+
+// Initialize Essentia WASM instance
+async function initEssentia() {
+  try {
+    // @ts-expect-error essentia.js types
+    const { EssentiaWASM } = await import('essentia.js/dist/essentia-wasm.es.js');
+    // @ts-expect-error essentia.js types
+    const { default: EssentiaJS } = await import('essentia.js/dist/essentia.js-core.es.js');
+    
+    const wasmModule = await EssentiaWASM();
+    essentia = new EssentiaJS(wasmModule, false);
+    console.log("Essentia WASM loaded dynamically!");
+  } catch (e) {
+    console.warn("Failed to load Essentia WASM dynamically", e);
+  }
+}
+
+initEssentia();
 
 // Create a safe hash string based on path and size without relying on crypto.subtle
 function generateId(filePath: string, size: number): string {
@@ -261,35 +282,73 @@ self.onmessage = async (e: MessageEvent<{ type?: string, jobId: string, file?: F
 
       const segments = analyzeSegmentsLogic(peaks, duration, bpm || 120);
       
-      // Simulate CENS and MFCC extraction for high-speed novelty/structural detection
+      // Feature extraction using Essentia.js WebAssembly
       let mfccs = new Float32Array(0);
       let cens = new Float32Array(0);
+      let extractedBpm = bpm;
+      let firstBeatOffset = 0;
+      let chromaKey = '';
       
       try {
-        if (typeof OfflineAudioContext !== 'undefined') {
-          // Use OfflineAudioContext for high-speed detection if available
-          const sampleRate = 22050; 
-          const ctx = new OfflineAudioContext(1, sampleRate * 1, sampleRate);
-          const analyser = ctx.createAnalyser();
-          analyser.fftSize = 2048;
-          // In a full MIR implementation, we'd process the entire audio block by block.
-          // For now, we mock the extracted features with correct shapes (e.g. 13 bands for MFCCs per 100ms frame).
+        if (essentia && audioData.length > 0 && !isPrecomputedPeaks) {
+          // Downsample or use raw audio data for feature extraction
+          // For Essentia, we typically need to convert Float32Array to their vector type
+          const audioVector = essentia.arrayToVector(audioData);
+          
+          try {
+            // 1. Spectral Flux / Transient Detection & Periodicity Estimation (BPM)
+            // Using PercivalBpmEstimator or RhythmExtractor2013
+            const rhythmResult = essentia.RhythmExtractor2013(audioVector);
+            if (rhythmResult && rhythmResult.bpm) {
+              extractedBpm = rhythmResult.bpm;
+              // Get ticks (beat locations in seconds)
+              const ticks = essentia.vectorToArray(rhythmResult.ticks);
+              
+              // 2. Phase Alignment (firstBeatOffset)
+              // Look for the first major transient (e.g., kick drum) within the first 15 seconds
+              if (ticks && ticks.length > 0) {
+                const first15SecTicks = ticks.filter((t: number) => t < 15.0);
+                if (first15SecTicks.length > 0) {
+                   firstBeatOffset = first15SecTicks[0];
+                }
+              }
+            }
+            
+            // 3. Harmonic Pitch Class Profile (Chroma / Key Detection)
+            // Simplified Key detection
+            const keyResult = essentia.KeyExtractor(audioVector);
+            if (keyResult && keyResult.key && keyResult.scale) {
+               chromaKey = `${keyResult.key} ${keyResult.scale}`;
+            }
+          } finally {
+            // Free WebAssembly memory!
+            if (audioVector) {
+              audioVector.delete();
+            }
+          }
+          
+          // 4. Extract CENS and MFCCs (mocked for now to avoid huge memory allocation until needed)
+          // But Essentia can compute these via MFCC and Chromagram CENS algorithms.
           const numFrames = Math.floor(duration * 10);
           mfccs = new Float32Array(numFrames * 13);
-          cens = new Float32Array(numFrames * 12); // 12 chroma bins
-          
-          for (let i = 0; i < mfccs.length; i++) {
-             mfccs[i] = Math.random() * 2 - 1; 
-          }
-          for (let i = 0; i < cens.length; i++) {
-             cens[i] = Math.random();
-          }
+          cens = new Float32Array(numFrames * 12);
         }
       } catch (e) {
-        console.warn('OfflineAudioContext not available in worker for MFCC/CENS extraction', e);
+        console.warn('Essentia.js extraction failed', e);
       }
       
-      self.postMessage({ jobId, success: true, peaks, bandPeaks, segments, mfccs, cens }, [mfccs.buffer, cens.buffer]);
+      self.postMessage({ 
+        jobId, 
+        success: true, 
+        peaks, 
+        bandPeaks, 
+        segments, 
+        mfccs, 
+        cens,
+        firstBeatOffset,
+        extractedBpm,
+        chromaKey
+      }, [mfccs.buffer, cens.buffer]);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       self.postMessage({ jobId, success: false, error: errorMessage });

@@ -16,6 +16,7 @@
     "coi-serviceworker": "^0.1.7",
     "dexie": "^4.4.2",
     "dexie-react-hooks": "^4.4.0",
+    "essentia.js": "^0.1.3",
     "lucide-react": "^1.16.0",
     "mpg123-decoder": "^1.0.3",
     "music-metadata": "^11.12.3",
