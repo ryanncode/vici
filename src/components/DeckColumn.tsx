@@ -277,57 +277,71 @@ export const DeckColumn: React.FC<DeckColumnProps> = ({ deckId }) => {
                       }}
                       className="bg-transparent border border-slate-300 dark:border-slate-600 text-[9px] font-bold uppercase text-slate-700 dark:text-slate-300 rounded px-0.5 py-0.5 outline-none w-full"
                     >
-                      <option value="delay">DLY</option>
-                      <option value="reverb">RVB</option>
-                      <option value="phaser">PHS</option>
-                      <option value="gate">GTE</option>
-                      <option value="roll">RLL</option>
-                      <option value="siren">SRN</option>
-                      <option value="compressor">CMP</option>
+                      {[
+                        { value: 'delay', label: 'DLY' },
+                        { value: 'reverb', label: 'RVB' },
+                        { value: 'phaser', label: 'PHS' },
+                        { value: 'gate', label: 'GTE' },
+                        { value: 'roll', label: 'RLL' },
+                        { value: 'siren', label: 'SRN' },
+                        { value: 'compressor', label: 'CMP' }
+                      ].filter(fx => fx.value === fxType || !fxSlots.includes(fx.value as 'delay' | 'reverb' | 'phaser' | 'gate' | 'roll' | 'siren' | 'compressor')).map(fx => (
+                        <option key={fx.value} value={fx.value}>{fx.label}</option>
+                      ))}
                     </select>
                   </div>
                   
                   <div className="flex-1 flex justify-around items-center">
-                    {fxType === 'reverb' && (
-                      <>
-                        <div className="flex items-center gap-0.5">
-                          <span className="text-[9px] font-bold text-slate-500 w-[16px]">MIX</span>
-                          <RotaryKnob label="MIX" hideLabel size="xs" min={0} max={1} step={0.01} value={state.fx.reverbSize} onChange={(v) => handleFxParamChange('reverb', 'size', v)} />
-                        </div>
-                        <div className="flex items-center gap-0.5">
-                          <span className="text-[9px] font-bold text-slate-500 w-[16px]">DEC</span>
-                          <RotaryKnob label="DEC" hideLabel size="xs" min={0.1} max={10.0} step={0.1} value={state.fx.reverbDecay} onChange={(v) => handleFxParamChange('reverb', 'decay', v)} />
-                        </div>
-                        <div className="flex items-center gap-0.5">
-                          <span className="text-[9px] font-bold text-slate-500 w-[16px]">PRE</span>
-                          <RotaryKnob label="PRE" hideLabel size="xs" min={0} max={100} step={1} value={state.fx.reverbPredelay} onChange={(v) => handleFxParamChange('reverb', 'predelay', v)} />
-                        </div>
-                        <div className="flex items-center gap-0.5">
-                          <span className="text-[9px] font-bold text-slate-500 w-[16px]">COL</span>
-                          <RotaryKnob label="COL" hideLabel size="xs" min={-1} max={1} step={0.01} value={state.fx.reverbColor} onChange={(v) => handleFxParamChange('reverb', 'color', v)} />
-                        </div>
-                      </>
-                    )}
-                    {fxType === 'delay' && (
-                      <>
-                        <div className="flex items-center gap-0.5">
-                          <span className="text-[9px] font-bold text-slate-500 w-[16px]">TIM</span>
-                          <RotaryKnob label="TIM" hideLabel size="xs" min={0} max={2} step={0.01} value={state.fx.delayTime} onChange={(v) => handleFxParamChange('delay', 'time', v)} />
-                        </div>
-                        <div className="flex items-center gap-0.5">
-                          <span className="text-[9px] font-bold text-slate-500 w-[16px]">FDB</span>
-                          <RotaryKnob label="FDB" hideLabel size="xs" min={0} max={0.95} step={0.01} value={state.fx.delayFeedback} onChange={(v) => handleFxParamChange('delay', 'feedback', v)} />
-                        </div>
-                      </>
-                    )}
-                    {fxType === 'phaser' && (
-                      <>
-                        <div className="flex items-center gap-0.5">
-                          <span className="text-[9px] font-bold text-slate-500 w-[16px]">RAT</span>
-                          <RotaryKnob label="RAT" hideLabel size="xs" min={0.1} max={10.0} step={0.01} value={state.fx.phaserRate} onChange={(v) => handleFxParamChange('phaser', 'rate', v)} />
-                        </div>
-                      </>
-                    )}
+                     <div className="flex items-center gap-0.5">
+                       <span className="text-[9px] font-bold text-slate-500 w-[12px] text-center">P1</span>
+                       <RotaryKnob 
+                          label="P1" hideLabel={true}
+                          size="xs" 
+                          min={fxType === 'phaser' ? 0.1 : 0} 
+                          max={fxType === 'phaser' ? 10.0 : fxType === 'delay' ? 2 : 1} 
+                          step={0.01} 
+                          value={fxType === 'delay' ? state.fx.delayTime : fxType === 'reverb' ? state.fx.reverbSize : fxType === 'phaser' ? state.fx.phaserRate : 0.5} 
+                          onChange={(v) => handleFxParamChange(fxType as 'delay' | 'reverb' | 'phaser', fxType === 'delay' ? 'time' : fxType === 'reverb' ? 'size' : 'rate', v)}
+                        />
+                     </div>
+                     <div className="flex items-center gap-0.5">
+                       <span className={`text-[9px] font-bold w-[12px] text-center ${(fxType === 'delay' || fxType === 'reverb') ? 'text-slate-500' : 'text-transparent'}`}>P2</span>
+                       <div className={`${(fxType === 'delay' || fxType === 'reverb') ? 'visible' : 'invisible'}`}>
+                         <RotaryKnob 
+                            label="P2" hideLabel={true}
+                            size="xs" 
+                            min={fxType === 'reverb' ? 0.1 : 0} 
+                            max={fxType === 'reverb' ? 10.0 : 0.95} 
+                            step={fxType === 'reverb' ? 0.1 : 0.01} 
+                            value={fxType === 'delay' ? state.fx.delayFeedback : fxType === 'reverb' ? state.fx.reverbDecay : 0.5} 
+                            onChange={(v) => fxType === 'delay' ? handleFxParamChange('delay', 'feedback', v) : fxType === 'reverb' ? handleFxParamChange('reverb', 'decay', v) : null}
+                          />
+                       </div>
+                     </div>
+                     <div className="flex items-center gap-0.5">
+                       <span className={`text-[9px] font-bold w-[12px] text-center ${fxType === 'reverb' ? 'text-slate-500' : 'text-transparent'}`}>P3</span>
+                       <div className={`${fxType === 'reverb' ? 'visible' : 'invisible'}`}>
+                         <RotaryKnob 
+                            label="P3" hideLabel={true}
+                            size="xs" 
+                            min={0} max={100} step={1} 
+                            value={fxType === 'reverb' ? state.fx.reverbPredelay : 0} 
+                            onChange={(v) => fxType === 'reverb' && handleFxParamChange('reverb', 'predelay', v)}
+                          />
+                       </div>
+                     </div>
+                     <div className="flex items-center gap-0.5">
+                       <span className={`text-[9px] font-bold w-[12px] text-center ${fxType === 'reverb' ? 'text-slate-500' : 'text-transparent'}`}>P4</span>
+                       <div className={`${fxType === 'reverb' ? 'visible' : 'invisible'}`}>
+                         <RotaryKnob 
+                            label="P4" hideLabel={true}
+                            size="xs" 
+                            min={-1} max={1} step={0.01} 
+                            value={fxType === 'reverb' ? state.fx.reverbColor : 0} 
+                            onChange={(v) => fxType === 'reverb' && handleFxParamChange('reverb', 'color', v)}
+                          />
+                       </div>
+                     </div>
                   </div>
                 </div>
               );
