@@ -1526,6 +1526,7 @@ var TrackProcessor = class extends AudioWorkletProcessor {
     this.expectedPullFrame = 0;
     this.isStreaming = false;
     this.fullBuffer = null;
+    this.nudgeTarget = 0;
     this.port.onmessage = async (e) => {
       if (e.data.type === "INIT_WASM") {
         try {
@@ -1591,7 +1592,16 @@ var TrackProcessor = class extends AudioWorkletProcessor {
       } else if (e.data.path === "/faust/pitch") {
         this.playbackRate = e.data.value;
       } else if (e.data.type === "SET_KEY_LOCK") {
-        this.keyLock = e.data.value;
+        if (this.keyLock !== e.data.value) {
+          this.keyLock = e.data.value;
+          if (this.bungee) {
+            this.bungee.reset();
+            this.bungeeFramesToFeed = void 0;
+            this.bungeeReadPointer = void 0;
+          }
+        }
+      } else if (e.data.type === "NUDGE") {
+        this.nudgeTarget += e.data.frames;
       }
     };
   }
@@ -1675,6 +1685,26 @@ var TrackProcessor = class extends AudioWorkletProcessor {
     let ratio = Math.max(0.1, this.playbackRate);
     const sampleRateRatio = (this.trackSampleRate || sampleRate) / sampleRate;
     ratio *= sampleRateRatio;
+    if (this.nudgeTarget !== 0) {
+      const nudgeRate = 0.05 * ratio;
+      const maxNudgeFramesPerBlock = outputFrames * nudgeRate;
+      if (this.nudgeTarget > 0) {
+        const framesToAbsorb = Math.min(this.nudgeTarget, maxNudgeFramesPerBlock);
+        ratio += framesToAbsorb / outputFrames;
+        this.nudgeTarget -= framesToAbsorb;
+      } else {
+        const framesToAbsorb = Math.min(-this.nudgeTarget, maxNudgeFramesPerBlock);
+        if (ratio - framesToAbsorb / outputFrames >= 0.1) {
+          ratio -= framesToAbsorb / outputFrames;
+          this.nudgeTarget += framesToAbsorb;
+        } else {
+          const allowedAbsorb = (ratio - 0.1) * outputFrames;
+          ratio = 0.1;
+          this.nudgeTarget += allowedAbsorb;
+        }
+      }
+      if (Math.abs(this.nudgeTarget) < 1e-3) this.nudgeTarget = 0;
+    }
     if (this.keyLock && this.bungee) {
       if (this.bungeeFramesToFeed === void 0) {
         this.bungeeFramesToFeed = 2048 + 512 + Math.ceil(outputFrames * ratio);

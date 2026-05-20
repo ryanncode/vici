@@ -193,7 +193,7 @@ function analyzeSegmentsLogic(peaks: Float32Array, duration: number, originalBpm
   return subdivided;
 }
 
-self.onmessage = async (e: MessageEvent<{ type?: string, jobId: string, file?: File, filePath?: string, existingId?: string, audioData?: Float32Array, duration?: number, bpm?: number, isPrecomputedPeaks?: boolean }>) => {
+self.onmessage = async (e: MessageEvent<{ type?: string, jobId: string, file?: File, filePath?: string, existingId?: string, audioData?: Float32Array, duration?: number, bpm?: number, isPrecomputedPeaks?: boolean, sampleRate?: number }>) => {
   const data = e.data;
   
   if (data.type === 'analyze_waveform') {
@@ -302,10 +302,15 @@ self.onmessage = async (e: MessageEvent<{ type?: string, jobId: string, file?: F
           
           try {
             // 1. Spectral Flux / Transient Detection & Periodicity Estimation (BPM)
-            // Using PercivalBpmEstimator or RhythmExtractor2013
+            // Using PercivalBpmEstimator or RhythmExtractor2013 (assumes 44100 Hz by default)
             const rhythmResult = essentia.RhythmExtractor2013(audioVector);
             if (rhythmResult && rhythmResult.bpm) {
-              extractedBpm = rhythmResult.bpm;
+              const actualSampleRate = data.sampleRate || 44100;
+              const sampleRateRatio = actualSampleRate / 44100;
+              
+              // Mathematically correct the BPM and ticks if sample rate isn't 44.1kHz
+              extractedBpm = rhythmResult.bpm * sampleRateRatio;
+              
               // Get ticks (beat locations in seconds)
               const ticks = essentia.vectorToArray(rhythmResult.ticks);
               
@@ -314,7 +319,7 @@ self.onmessage = async (e: MessageEvent<{ type?: string, jobId: string, file?: F
               if (ticks && ticks.length > 0) {
                 const first15SecTicks = ticks.filter((t: number) => t < 15.0);
                 if (first15SecTicks.length > 0) {
-                   firstBeatOffset = first15SecTicks[0];
+                   firstBeatOffset = first15SecTicks[0] / sampleRateRatio;
                 }
               }
             }

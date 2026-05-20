@@ -304,6 +304,10 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
       const engine = AudioEngine.getInstance();
       const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
       const currentTime = deckEngine.getCurrentTime();
+      
+      const store = useMixerStore.getState();
+      const currentPitch = (deckId === 'A' ? store.deckA : store.deckB).pitch;
+      const currentZoomTimeWindow = zoomTimeWindow * currentPitch;
 
       const dpr = window.devicePixelRatio || 1;
       const rect = canvas.getBoundingClientRect();
@@ -326,10 +330,10 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
         ctx.fillRect(0, 0, width, height);
       }
 
-      // We are showing `zoomTimeWindow` seconds across the full `width`.
+      // We are showing `currentZoomTimeWindow` seconds across the full `width`.
       // The center of the canvas is `currentTime`.
-      const pixelsPerSecond = width / zoomTimeWindow;
-      const timeAtLeftEdge = currentTime - (zoomTimeWindow / 2);
+      const pixelsPerSecond = width / currentZoomTimeWindow;
+      const timeAtLeftEdge = currentTime - (currentZoomTimeWindow / 2);
       
       // Draw grid overlay (beat markers)
       if (bpm && bpm > 0) {
@@ -391,7 +395,7 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
       // Draw Waveform peaks
       const peaksPerSecond = peaks.length / duration;
       const startPeakIdx = Math.max(0, Math.floor(timeAtLeftEdge * peaksPerSecond));
-      const endPeakIdx = Math.min(peaks.length, Math.ceil((currentTime + (zoomTimeWindow / 2)) * peaksPerSecond));
+      const endPeakIdx = Math.min(peaks.length, Math.ceil((currentTime + (currentZoomTimeWindow / 2)) * peaksPerSecond));
       
       if (bandPeaks && bandPeaks.length === peaks.length * 3) {
         // 3-Band Coloration Mode via Canvas Compositing

@@ -92,12 +92,16 @@ self.onmessage = async (e: MessageEvent) => {
         streams.set(deckId, streamState);
         pushInterleavedAsyncStateful(deckId);
         
-        self.postMessage({ type: 'DECODE_DONE', deckId, peaks, bandPeaks, duration, bufferLength, trackSampleRate }, [peaks.buffer, bandPeaks.buffer]);
+        // Pass a copy of the left channel for metadata analysis (so we don't transfer ownership
+        // of the array that is still being pushed to the ring buffer)
+        const analysisBuffer = leftChannel.slice();
+        self.postMessage({ type: 'DECODE_DONE', deckId, peaks, bandPeaks, duration, bufferLength, trackSampleRate, analysisBuffer }, [peaks.buffer, bandPeaks.buffer, analysisBuffer.buffer]);
       } else {
         const deckId = payload.deckId;
         const leftClone = leftChannel.slice();
         const rightClone = rightChannel.slice();
-        self.postMessage({ type: 'DECODE_DONE', deckId, peaks, bandPeaks, duration, bufferLength, leftChannel: leftClone, rightChannel: rightClone, trackSampleRate }, [peaks.buffer, bandPeaks.buffer, leftClone.buffer, rightClone.buffer]);
+        const analysisBuffer = leftChannel.slice();
+        self.postMessage({ type: 'DECODE_DONE', deckId, peaks, bandPeaks, duration, bufferLength, leftChannel: leftClone, rightChannel: rightClone, trackSampleRate, analysisBuffer }, [peaks.buffer, bandPeaks.buffer, leftClone.buffer, rightClone.buffer, analysisBuffer.buffer]);
       }
     } catch (err) {
       self.postMessage({ type: 'DECODE_ERROR', deckId: payload.deckId, error: String(err) });

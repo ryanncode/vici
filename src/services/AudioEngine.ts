@@ -134,7 +134,7 @@ export class Deck {
       const sharedBuffer = ringBuffer ? ringBuffer.getSharedBuffer() : null;
 
       // 2. Decode in background worker to completely bypass main thread memory allocation
-      const workerResponse = await new Promise<{ peaks: Float32Array, bandPeaks?: Float32Array, duration: number, bufferLength: number, trackSampleRate: number, leftChannel?: Float32Array, rightChannel?: Float32Array }>((resolve, reject) => {
+      const workerResponse = await new Promise<{ peaks: Float32Array, bandPeaks?: Float32Array, duration: number, bufferLength: number, trackSampleRate: number, leftChannel?: Float32Array, rightChannel?: Float32Array, analysisBuffer?: Float32Array }>((resolve, reject) => {
         if (!AudioEngine.getInstance().decodingWorker) return reject("No decoding worker available");
         
         const worker = AudioEngine.getInstance().decodingWorker!;
@@ -170,8 +170,12 @@ export class Deck {
         }, [arrayBuffer]);
       });
 
-      // 3. Generate metadata from precomputed peaks
-      await this.generatePeaks(workerResponse.peaks, workerResponse.duration, workerResponse.bandPeaks);
+      // 3. Generate metadata from precomputed peaks or raw analysis buffer
+      if (workerResponse.analysisBuffer) {
+        await this.generatePeaks(workerResponse.analysisBuffer, workerResponse.duration, workerResponse.bandPeaks, false, workerResponse.trackSampleRate);
+      } else {
+        await this.generatePeaks(workerResponse.peaks, workerResponse.duration, workerResponse.bandPeaks, true, workerResponse.trackSampleRate);
+      }
       this._duration = workerResponse.duration;
       this._loaded = true;
 
@@ -205,9 +209,9 @@ export class Deck {
     }
   }
 
-  private async generatePeaks(peaksOrAudio: Float32Array, duration: number, precomputedBandPeaks?: Float32Array) {
+  private async generatePeaks(peaksOrAudio: Float32Array, duration: number, precomputedBandPeaks?: Float32Array, isPrecomputed: boolean = true, sampleRate: number = 44100) {
     try {
-      const result = await metadataScanner.analyzeWaveform(peaksOrAudio, duration, this.originalBpm, true);
+      const result = await metadataScanner.analyzeWaveform(peaksOrAudio, duration, this.originalBpm, isPrecomputed, sampleRate);
       this.peaks = result.peaks;
       this.bandPeaks = precomputedBandPeaks || result.bandPeaks || null;
       this.segments = result.segments;
@@ -253,6 +257,12 @@ export class Deck {
     this.lastTimeUpdateReal = performance.now();
     if (this.trackNode) {
       this.trackNode.port.postMessage({ type: 'SEEK', value: time });
+    }
+  }
+
+  public nudge(frames: number): void {
+    if (this.trackNode && this.isPlaying) {
+      this.trackNode.port.postMessage({ type: 'NUDGE', frames: frames });
     }
   }
 

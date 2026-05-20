@@ -73,6 +73,7 @@ class TrackProcessor extends AudioWorkletProcessor {
     this.expectedPullFrame = 0;
     this.isStreaming = false;
     this.fullBuffer = null;
+    this.nudgeTarget = 0;
 
     this.port.onmessage = async (e) => {
       if (e.data.type === 'INIT_WASM') {
@@ -140,7 +141,16 @@ class TrackProcessor extends AudioWorkletProcessor {
       } else if (e.data.path === '/faust/pitch') {
         this.playbackRate = e.data.value;
       } else if (e.data.type === 'SET_KEY_LOCK') {
-        this.keyLock = e.data.value;
+        if (this.keyLock !== e.data.value) {
+          this.keyLock = e.data.value;
+          if (this.bungee) {
+            this.bungee.reset();
+            this.bungeeFramesToFeed = undefined;
+            this.bungeeReadPointer = undefined;
+          }
+        }
+      } else if (e.data.type === 'NUDGE') {
+        this.nudgeTarget += e.data.frames;
       }
     };
   }
@@ -242,6 +252,35 @@ class TrackProcessor extends AudioWorkletProcessor {
     // Correct for sample rate mismatch between track and hardware AudioContext
     const sampleRateRatio = (this.trackSampleRate || sampleRate) / sampleRate;
     ratio *= sampleRateRatio;
+
+    // Apply dynamic phase synchronization (micro-acceleration/deceleration)
+    if (this.nudgeTarget !== 0) {
+      // Allow up to 5% of current playback speed for nudging
+      const nudgeRate = 0.05 * ratio; 
+      const maxNudgeFramesPerBlock = outputFrames * nudgeRate;
+      
+      if (this.nudgeTarget > 0) {
+        // Need to advance faster (consume MORE frames to catch up)
+        const framesToAbsorb = Math.min(this.nudgeTarget, maxNudgeFramesPerBlock);
+        ratio += (framesToAbsorb / outputFrames);
+        this.nudgeTarget -= framesToAbsorb;
+      } else {
+        // Need to advance slower (consume FEWER frames to fall back)
+        const framesToAbsorb = Math.min(-this.nudgeTarget, maxNudgeFramesPerBlock);
+        if (ratio - (framesToAbsorb / outputFrames) >= 0.1) {
+          ratio -= (framesToAbsorb / outputFrames);
+          this.nudgeTarget += framesToAbsorb;
+        } else {
+          // Clamped to minimum ratio 0.1
+          const allowedAbsorb = (ratio - 0.1) * outputFrames;
+          ratio = 0.1;
+          this.nudgeTarget += allowedAbsorb;
+        }
+      }
+      
+      // Clear tiny remainders (less than a thousandth of a frame)
+      if (Math.abs(this.nudgeTarget) < 0.001) this.nudgeTarget = 0;
+    }
     
     // We fetch a block of frames.
     if (this.keyLock && this.bungee) {

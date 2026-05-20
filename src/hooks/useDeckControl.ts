@@ -137,6 +137,41 @@ export function useDeckControl(deckId: 'A' | 'B') {
     }
   };
 
+  const alignPhase = () => {
+    const engine = AudioEngine.getInstance();
+    const otherDeckEngine = deckId === 'A' ? engine.deckB : engine.deckA;
+    const thisDeckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
+    
+    if (otherDeckEngine.currentBpm > 0 && thisDeckEngine.originalBpm > 0) {
+      const store = useMixerStore.getState();
+      const otherDeckState = deckId === 'A' ? store.deckB : store.deckA;
+      const thisDeckState = deckId === 'A' ? store.deckA : store.deckB;
+      
+      // Only align if the other deck is actually playing, otherwise we just match tempo
+      if (thisDeckState.track && otherDeckState.track && otherDeckEngine.isPlaying) {
+          const timeOther = otherDeckEngine.getCurrentTime();
+          const firstBeatOther = otherDeckState.track.firstBeatOffset || 0;
+          const beatsOther = (timeOther - firstBeatOther) / (60 / otherDeckEngine.originalBpm);
+          const phaseOther = ((beatsOther % 1.0) + 1.0) % 1.0;
+          
+          const timeThis = thisDeckEngine.getCurrentTime();
+          const firstBeatThis = thisDeckState.track.firstBeatOffset || 0;
+          const beatsThis = (timeThis - firstBeatThis) / (60 / thisDeckEngine.originalBpm);
+          const phaseThis = ((beatsThis % 1.0) + 1.0) % 1.0;
+          
+          let phaseDiff = phaseOther - phaseThis;
+          if (phaseDiff > 0.5) phaseDiff -= 1.0;
+          if (phaseDiff < -0.5) phaseDiff += 1.0;
+          
+          const nudgeSeconds = phaseDiff * (60 / thisDeckEngine.originalBpm);
+          const sampleRate = engine.context.sampleRate;
+          const nudgeFrames = Math.round(nudgeSeconds * sampleRate);
+          
+          thisDeckEngine.nudge(nudgeFrames);
+      }
+    }
+  };
+
   const togglePlayback = async () => {
     if (AudioEngine.getInstance().context.state !== 'running') {
       
@@ -146,6 +181,7 @@ export function useDeckControl(deckId: 'A' | 'B') {
     await engine.init();
     const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
     const isPlaying = useMixerStore.getState()[deckId === 'A' ? 'deckA' : 'deckB'].isPlaying;
+    const isSync = useMixerStore.getState()[deckId === 'A' ? 'deckA' : 'deckB'].sync;
     
     if (isPlaying) {
       deckEngine.stop();
@@ -153,6 +189,7 @@ export function useDeckControl(deckId: 'A' | 'B') {
     } else {
       deckEngine.play();
       setDeckState(deckId, { isPlaying: true, status: 'playing' });
+      if (isSync) alignPhase();
     }
   };
 
@@ -178,6 +215,13 @@ export function useDeckControl(deckId: 'A' | 'B') {
     const engine = AudioEngine.getInstance();
     const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
     deckEngine.seek(value);
+    
+    const isSync = useMixerStore.getState()[deckId === 'A' ? 'deckA' : 'deckB'].sync;
+    if (isSync) {
+      // Small delay to allow the seek command to propagate to the worklet
+      // and update the playhead before calculating the new phase diff.
+      setTimeout(alignPhase, 20);
+    }
   };
 
   const setPitch = (newPitch: number) => {
@@ -225,6 +269,12 @@ export function useDeckControl(deckId: 'A' | 'B') {
     }
   };
 
+  const nudgePlayhead = (frames: number) => {
+    const engine = AudioEngine.getInstance();
+    const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
+    deckEngine.nudge(frames);
+  };
+
   const toggleMute = () => {
     const engine = AudioEngine.getInstance();
     const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
@@ -254,6 +304,8 @@ export function useDeckControl(deckId: 'A' | 'B') {
          const requiredPitch = otherDeckEngine.currentBpm / thisDeckEngine.originalBpm;
          thisDeckEngine.setPlaybackRate(requiredPitch);
          setDeckState(deckId, { pitch: requiredPitch });
+         
+         alignPhase();
        }
     }
   };
@@ -354,6 +406,7 @@ export function useDeckControl(deckId: 'A' | 'B') {
     seek,
     setPitch,
     nudgePitch,
+    nudgePlayhead,
     toggleMute,
     toggleKeyLock,
     toggleSync,
