@@ -1549,6 +1549,7 @@ var TrackProcessor = class extends AudioWorkletProcessor {
         if (this.bungee) {
           this.bungee.reset();
           this.bungeeFramesToFeed = void 0;
+          this.bungeeReadPointer = void 0;
         }
         console.log("TrackProcessor: LOAD_TRACK stream connected.");
       } else if (e.data.type === "LOAD_TRACK_FULL") {
@@ -1562,6 +1563,7 @@ var TrackProcessor = class extends AudioWorkletProcessor {
         if (this.bungee) {
           this.bungee.reset();
           this.bungeeFramesToFeed = void 0;
+          this.bungeeReadPointer = void 0;
         }
         console.log("TrackProcessor: LOAD_TRACK_FULL static buffer connected.");
       } else if (e.data.type === "PLAY") {
@@ -1676,19 +1678,25 @@ var TrackProcessor = class extends AudioWorkletProcessor {
     if (this.keyLock && this.bungee) {
       if (this.bungeeFramesToFeed === void 0) {
         this.bungeeFramesToFeed = 2048 + 512 + Math.ceil(outputFrames * ratio);
+        this.bungeeReadPointer = this.playhead;
       }
-      let framesAvailable = Math.floor(bufferLength - this.playhead);
+      let framesAvailable = Math.floor(bufferLength - this.bungeeReadPointer);
       const inputFrames = Math.min(this.bungeeFramesToFeed, framesAvailable);
-      if (inputFrames <= 0) return true;
-      this.ensureWasmBuffers(inputFrames, outputFrames);
-      for (let i = 0; i < inputFrames; i++) {
-        const idx = Math.floor(this.playhead) + i;
-        const frame = getFrame(idx);
-        this.inputHeap[i * 2] = frame[0];
-        this.inputHeap[i * 2 + 1] = frame[1];
+      const framesToPush = Math.max(0, inputFrames);
+      if (framesToPush > 0) {
+        this.ensureWasmBuffers(framesToPush, outputFrames);
+        for (let i = 0; i < framesToPush; i++) {
+          const idx = Math.floor(this.bungeeReadPointer) + i;
+          const frame = getFrame(idx);
+          this.inputHeap[i * 2] = frame[0];
+          this.inputHeap[i * 2 + 1] = frame[1];
+        }
+      } else {
+        this.ensureWasmBuffers(0, outputFrames);
       }
-      const consumed = this.bungee.process_audio(this.inputPtr, inputFrames, this.outputPtr, outputFrames, ratio, 1);
+      const consumed = this.bungee.process_audio(this.inputPtr, framesToPush, this.outputPtr, outputFrames, ratio, 1);
       this.bungeeFramesToFeed = consumed;
+      this.bungeeReadPointer += framesToPush;
       for (let i = 0; i < outputFrames; i++) {
         if (channelCount > 0) {
           let val = this.outputHeap[i * 2];

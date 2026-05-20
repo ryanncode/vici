@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Full Chain Audio Verification</title>
+    <style>
+        body { font-family: sans-serif; background: #1e293b; color: #cbd5e1; padding: 2rem; }
+        button { background: #3b82f6; color: white; border: none; padding: 0.5rem 1rem; border-radius: 0.25rem; cursor: pointer; margin-right: 1rem; }
+        button:hover { background: #2563eb; }
+        pre { background: #0f172a; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; margin-top: 1rem; }
+        canvas { background: #0f172a; border: 1px solid #334155; margin-top: 1rem; border-radius: 0.5rem; display: block; }
+    </style>
+</head>
+<body>
+    <h1>Full Chain DSP Verification</h1>
+    <div>
+        <button id="runGainTest">Run 1kHz Gain Test</button>
+        <button id="runTHDTest">Run 40Hz Sub-Bass THD Test (Key Lock ON)</button>
+    </div>
+    
+    <canvas id="viz" width="800" height="300"></canvas>
+    <pre id="output"></pre>
+
+    <script type="module">
+        import { FaustMonoDspGenerator } from './faust/faustwasm/index.js';
+
+        const output = document.getElementById('output');
+        const canvas = document.getElementById('viz');
+        const ctx2d = canvas.getContext('2d');
+
+        function log(msg) {
+            output.textContent += msg + '\n';
+        }
+
+        async function initFaust(audioCtx) {
+            const dspMeta = await (await fetch("/faust/dsp-meta.json")).json();
+            const dspModule = await WebAssembly.compileStreaming(await fetch("/faust/dsp-module.wasm"));
+            const generator = new FaustMonoDspGenerator();
+            return await generator.createNode(audioCtx, "engine", { module: dspModule, json: JSON.stringify(dspMeta), soundfiles: {} }, false);
+        }
+
+        async function setupOfflineChain(sampleRate, duration, pitch = 1.0, keyLock = false) {
+            const offlineCtx = new OfflineAudioContext(2, sampleRate * duration, sampleRate);
+            
+            // 1. Setup Faust Master Engine (simulating AudioEngine.ts)
+            const masterEngine = await initFaust(offlineCtx);
+            masterEngine.setParamValue('/engine/volume', 1.0);
+            masterEngine.setParamValue('/engine/crossfader', 0.5); // Center
+            masterEngine.connect(offlineCtx.destination);
+
+            // 2. Setup Faust Deck Node (simulating Deck class)
+            const deckEngine = await initFaust(offlineCtx);
+            deckEngine.setParamValue('/engine/volume', 1.0);
+            // Connect to deck A input of master
+            deckEngine.connect(masterEngine); 
+
+            // 3. Setup Worklet (simulating TrackProcessor)
+            await offlineCtx.audioWorklet.addModule('/worklets/track-processor.js');
+            const trackNode = new AudioWorkletNode(offlineCtx, 'track-processor', {
+                numberOfInputs: 0,
+                numberOfOutputs: 1,
+                outputChannelCount: [2]
+            });
+            trackNode.connect(deckEngine);
+
+            // Wait for WASM to initialize in worklet
+            await new Promise(resolve => {
+                trackNode.port.onmessage = (e) => {
+                    if (e.data.type === 'WASM_READY') resolve();
+                };
+                trackNode.port.postMessage({ type: 'INIT_WASM' });
+            });
+
+            return { offlineCtx, trackNode, deckEngine, masterEngine };
+        }
+
+        document.getElementById('runGainTest').onclick = async () => {
+            output.textContent = '';
+            log("--- Running Full Chain Gain Test (1kHz) ---");
+            
+            const sampleRate = 48000;
+            const duration = 2.0; // 2 seconds
+            
+            const { offlineCtx, trackNode } = await setupOfflineChain(sampleRate, duration);
+            
+            // Generate 1kHz pure sine wave at 0 dBFS
+            log("Synthesizing 0 dBFS 1kHz Sine Wave...");
+            const numFrames = sampleRate * duration;
+            const leftChannel = new Float32Array(numFrames);
+            const rightChannel = new Float32Array(numFrames);
+            for (let i = 0; i < numFrames; i++) {
+                const val = Math.sin(2 * Math.PI * 1000 * i / sampleRate);
+                leftChannel[i] = val;
+                rightChannel[i] = val;
+            }
+
+            trackNode.port.postMessage({
+                type: 'LOAD_TRACK_FULL',
+                leftChannel,
+                rightChannel,
+                bufferLength: numFrames,
+                trackSampleRate: sampleRate
+            });
+
+            trackNode.port.postMessage({ type: 'PLAY' });
+            
+            log("Rendering OfflineAudioContext...");
+            const renderedBuffer = await offlineCtx.startRendering();
+            
+            const outL = renderedBuffer.getChannelData(0);
+            
+            let maxPeak = 0;
+            let sumSquares = 0;
+            // Ignore first 0.5s to let Faust lookahead limiter and filters settle
+            const startIdx = Math.floor(sampleRate * 0.5);
+            for (let i = startIdx; i < outL.length; i++) {
+                const abs = Math.abs(outL[i]);
+                if (abs > maxPeak) maxPeak = abs;
+                sumSquares += outL[i] * outL[i];
+            }
+            
+            const rms = Math.sqrt(sumSquares / (outL.length - startIdx));
+            const peakDb = 20 * Math.log10(Math.max(1e-6, maxPeak));
+            const rmsDb = 20 * Math.log10(Math.max(1e-6, rms));
+            
+            log(`Max Peak Amplitude: ${maxPeak.toFixed(6)} (${peakDb.toFixed(2)} dBFS)`);
+            log(`RMS Amplitude: ${rms.toFixed(6)} (${rmsDb.toFixed(2)} dBFS)`);
+            
+            if (maxPeak > 1.01) {
+                log("FAIL: The output is hotter than 1.0! Something is adding gain in the chain.");
+            } else {
+                log("PASS: The output gain is strictly maintained. The audio is NOT running hot.");
+            }
+        };
+
+        document.getElementById('runTHDTest').onclick = async () => {
+            output.textContent = '';
+            log("--- Running Full Chain THD Test (40Hz Sub-Bass, Key Lock ON, -16% Pitch) ---");
+            
+            const sampleRate = 48000;
+            const duration = 5.0; // 5 seconds
+            const pitch = 0.84;
+            
+            const { offlineCtx, trackNode } = await setupOfflineChain(sampleRate, duration, pitch, true);
+            
+            // Generate 40Hz pure sine wave at 0 dBFS
+            log("Synthesizing 0 dBFS 40Hz Sine Wave...");
+            const numFrames = sampleRate * duration;
+            const leftChannel = new Float32Array(numFrames);
+            const rightChannel = new Float32Array(numFrames);
+            for (let i = 0; i < numFrames; i++) {
+                const val = Math.sin(2 * Math.PI * 40 * i / sampleRate);
+                leftChannel[i] = val;
+                rightChannel[i] = val;
+            }
+
+            trackNode.port.postMessage({
+                type: 'LOAD_TRACK_FULL',
+                leftChannel,
+                rightChannel,
+                bufferLength: numFrames,
+                trackSampleRate: sampleRate
+            });
+
+            trackNode.port.postMessage({ type: 'SET_KEY_LOCK', value: true });
+            trackNode.port.postMessage({ path: '/faust/pitch', value: pitch });
+            trackNode.port.postMessage({ type: 'PLAY' });
+            
+            log(`Rendering offline context for ${duration}s...`);
+            const renderedBuffer = await offlineCtx.startRendering();
+            
+            const outL = renderedBuffer.getChannelData(0);
+            
+            // Analyze the last 2 seconds to avoid any transient startup effects
+            const analyzeStart = Math.floor(sampleRate * 3.0);
+            const analyzeEnd = Math.floor(sampleRate * 5.0);
+            
+            let maxPeak = 0;
+            let peakVariances = [];
+            let currentPeak = 0;
+            
+            for (let i = analyzeStart; i < analyzeEnd; i++) {
+                const val = outL[i];
+                const abs = Math.abs(val);
+                if (abs > currentPeak) currentPeak = abs;
+                if (abs > maxPeak) maxPeak = abs;
+                
+                // Zero crossing detector
+                if (i > analyzeStart && outL[i-1] < 0 && val >= 0) {
+                    if (currentPeak > 0) {
+                        peakVariances.push(currentPeak);
+                    }
+                    currentPeak = 0;
+                }
+            }
+            
+            let meanPeak = 0;
+            for (let p of peakVariances) meanPeak += p;
+            meanPeak /= peakVariances.length;
+            
+            let varianceSum = 0;
+            let minP = 1.0, maxP = 0.0;
+            for (let p of peakVariances) {
+                varianceSum += Math.pow(p - meanPeak, 2);
+                if (p < minP) minP = p;
+                if (p > maxP) maxP = p;
+            }
+            const stdDev = Math.sqrt(varianceSum / peakVariances.length);
+            const amplitudeRipplePercent = (stdDev / meanPeak) * 100;
+            
+            log(`Max Peak: ${maxPeak.toFixed(6)}`);
+            log(`Mean Peak: ${meanPeak.toFixed(6)}`);
+            log(`Min Peak Cycle: ${minP.toFixed(6)}, Max Peak Cycle: ${maxP.toFixed(6)}`);
+            log(`Amplitude Ripple (StdDev): ${amplitudeRipplePercent.toFixed(2)}%`);
+            
+            if (amplitudeRipplePercent > 5.0) {
+                log("FAIL: High amplitude modulation detected. Sub-bass is muddled and phase smeared.");
+            } else {
+                log("PASS: Amplitude is highly stable. Sub-bass is NOT muddled.");
+            }
+            
+            // Draw waveform
+            ctx2d.clearRect(0, 0, canvas.width, canvas.height);
+            ctx2d.beginPath();
+            ctx2d.strokeStyle = '#38bdf8';
+            ctx2d.lineWidth = 1;
+            
+            const drawSamples = 2400; // 50ms
+            for (let i = 0; i < drawSamples; i++) {
+                const x = (i / drawSamples) * canvas.width;
+                const val = outL[analyzeStart + i];
+                const y = canvas.height / 2 - (val * (canvas.height / 2 - 20));
+                if (i === 0) ctx2d.moveTo(x, y);
+                else ctx2d.lineTo(x, y);
+            }
+            ctx2d.stroke();
+            log("Rendered 50ms of the output waveform to the canvas.");
+        };
+    </script>
+</body>
+</html>
