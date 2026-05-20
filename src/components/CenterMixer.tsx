@@ -213,7 +213,8 @@ export const CenterMixer: React.FC = () => {
     const val = parseFloat(e.target.value);
     throttledDSP('crossfade', () => {
       const engine = AudioEngine.getInstance();
-      engine.setCrossfadeValue(val);
+      const curve = useMixerStore.getState().crossfadeCurve || 'constant_power';
+      engine.setCrossfadeValue(val, curve);
     });
     
     useMixerStore.getState().setCrossfade(val);
@@ -408,8 +409,19 @@ export const CenterMixer: React.FC = () => {
       </div>
 
       {/* Bottom Section: Crossfader Hub */}
-      <div className="h-[60px] border-2 border-slate-300 dark:border-slate-700 rounded-xl flex flex-col items-center justify-center bg-white dark:bg-slate-800 shadow-md shrink-0 relative py-1 px-2">
-        <span className="text-[10px] font-bold tracking-widest text-slate-500 mb-1 uppercase">Crossfader</span>
+      <div className="h-[75px] border-2 border-slate-300 dark:border-slate-700 rounded-xl flex flex-col items-center justify-center bg-white dark:bg-slate-800 shadow-md shrink-0 relative py-1 px-2">
+        <div className="flex w-full justify-between items-center mb-1">
+          <span className="text-[10px] font-bold tracking-widest text-slate-500 uppercase flex-1 text-center pl-6">Crossfader</span>
+          <select 
+            value={useMixerStore(s => s.crossfadeCurve)}
+            onChange={(e) => useMixerStore.getState().setCrossfadeCurve(e.target.value as 'constant_power' | 'linear' | 'cut')}
+            className="text-[9px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded border border-slate-300 dark:border-slate-600 outline-none w-[60px]"
+          >
+            <option value="constant_power">Power</option>
+            <option value="linear">Linear</option>
+            <option value="cut">Cut</option>
+          </select>
+        </div>
         
         <div className="w-full h-8 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-300 dark:border-slate-700 shadow-inner flex items-center px-1 relative touch-none" onPointerDown={(e) => handleCrossfaderPointerDown(e, crossfade)} onWheel={(e) => handleCrossfaderWheel(e, crossfade)} onDoubleClick={() => handleCrossfadeChange({ target: { value: '0.5' } } as unknown as ChangeEvent<HTMLInputElement>)}>
           <input 

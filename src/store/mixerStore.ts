@@ -89,6 +89,7 @@ export interface MixerState {
   deckA: DeckState;
   deckB: DeckState;
   crossfade: number;
+  crossfadeCurve: 'constant_power' | 'linear' | 'cut';
   masterDeck: 'A' | 'B' | null;
   isAutomixEnabled: boolean;
   automixBars: number;
@@ -99,6 +100,7 @@ export interface MixerState {
   setDeckFx: (deckId: 'A' | 'B', partial: Partial<FxState>) => void;
   setDeckEq: (deckId: 'A' | 'B', partial: Partial<{ high: number; mid: number; low: number }>) => void;
   setCrossfade: (value: number) => void;
+  setCrossfadeCurve: (curve: 'constant_power' | 'linear' | 'cut') => void;
   setMasterDeck: (deckId: 'A' | 'B' | null) => void;
   setIsAutomixEnabled: (enabled: boolean) => void;
 }
@@ -107,6 +109,7 @@ export const useMixerStore = create<MixerState>((set) => ({
   deckA: { ...initialDeckState },
   deckB: { ...initialDeckState },
   crossfade: 0.5,
+  crossfadeCurve: 'constant_power',
   masterDeck: null,
   isAutomixEnabled: false,
   automixBars: 4,
@@ -152,6 +155,8 @@ export const useMixerStore = create<MixerState>((set) => ({
     }),
 
   setCrossfade: (value) => set({ crossfade: value }),
+  setCrossfadeCurve: (curve) => set({ crossfadeCurve: curve }),
   setMasterDeck: (deckId) => set({ masterDeck: deckId }),
   setIsAutomixEnabled: (enabled) => set({ isAutomixEnabled: enabled }),
+  setMasterVolume: (v: number) => set({ masterVolume: v }),
 }));

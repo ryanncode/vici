@@ -439,11 +439,22 @@ export class AudioEngine {
     }
   }
 
-  public setCrossfadeValue(value: number): void {
+  public setCrossfadeValue(value: number, curve: 'constant_power' | 'linear' | 'cut' = 'constant_power'): void {
     // Value range: 0 (Deck A) to 1 (Deck B)
-    // Equal power crossfade
-    const gainA = Math.cos(value * 0.5 * Math.PI);
-    const gainB = Math.cos((1.0 - value) * 0.5 * Math.PI);
+    let gainA = 1.0;
+    let gainB = 1.0;
+
+    if (curve === 'linear') {
+      gainA = 1.0 - value;
+      gainB = value;
+    } else if (curve === 'cut') {
+      gainA = value > 0.95 ? 0.0 : 1.0;
+      gainB = value < 0.05 ? 0.0 : 1.0;
+    } else {
+      // Equal power crossfade
+      gainA = Math.cos(value * 0.5 * Math.PI);
+      gainB = Math.cos((1.0 - value) * 0.5 * Math.PI);
+    }
 
     if (this.deckA) {
       this.deckA.setCrossfadeGain(gainA);

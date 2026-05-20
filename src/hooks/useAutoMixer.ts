@@ -84,7 +84,8 @@ export function useAutoMixer({ library, isAutomixEnabled, onTransitionStart, onT
         const targetDeck = targetDeckId === 'A' ? audio.deckA : audio.deckB;
         targetDeck.stop();
         // audio.crossfader.fade.cancelScheduledValues(Tone.now());
-        audio.setCrossfadeValue(activeDeck === 'A' ? 0 : 1);
+        const curve = useMixerStore.getState().crossfadeCurve || 'constant_power';
+        audio.setCrossfadeValue(activeDeck === 'A' ? 0 : 1, curve);
         
         onTransitionCancel(targetDeckId);
       }
@@ -218,8 +219,9 @@ export function useAutoMixer({ library, isAutomixEnabled, onTransitionStart, onT
           
           const currentValue = startValue + (targetValue - startValue) * progress;
           
-          useMixerStore.getState().setCrossfade(currentValue);
-          audio.setCrossfadeValue(currentValue);
+          const state = useMixerStore.getState();
+          state.setCrossfade(currentValue);
+          audio.setCrossfadeValue(currentValue, state.crossfadeCurve || 'constant_power');
           
           // Ramp delay feedback from 0.2 to 0.75 for trailing tail
           const delayFeedback = 0.2 + (0.55 * progress);
