@@ -390,48 +390,49 @@
                 log("WASM BungeeStretcher loaded successfully.");
                 
                 // 1. Create a test signal: a pure 50Hz sine wave (Sub-Bass)
-                const numFrames = 4096; // Max 4096 stream limit per call
-                const inputHeapPtr = wasmModule._malloc(numFrames * 2 * 4); // stereo interleaved float32
-                const inputHeap = new Float32Array(wasmModule.HEAPF32.buffer, inputHeapPtr, numFrames * 2);
+                const inputFramesNeeded = 256 + 512 + 2048; // simulate worklet block size needs
+                const inputHeapPtr = wasmModule._malloc(inputFramesNeeded * 2 * 4); 
+                const inputHeap = new Float32Array(wasmModule.HEAPF32.buffer, inputHeapPtr, inputFramesNeeded * 2);
                 
                 const freq = 50;
-                for (let i = 0; i < numFrames; i++) {
-                    const val = Math.sin(2 * Math.PI * freq * i / sampleRate);
-                    inputHeap[i * 2] = val;     // Left
-                    inputHeap[i * 2 + 1] = val; // Right
-                }
+                let phase = 0;
                 
                 // We'll stretch it by a ratio of 0.84 (approx 16% pitch shift/Key Lock)
                 const ratio = 0.84;
                 
-                const outputFramesCap = 8192; // Max possible per 4096 input
-                const outputHeapPtr = wasmModule._malloc(outputFramesCap * 2 * 4);
+                const outputFrames = 128; // Worklet block size
+                const outputHeapPtr = wasmModule._malloc(outputFrames * 2 * 4);
                 
-                log(`Feeding 32,000 samples of 50Hz sine wave into Bungee at ${ratio}x stretch ratio to overcome algorithmic latency...`);
+                log(`Feeding 50Hz sine wave into WSOLA Stretcher in 128-frame blocks...`);
                 
-                let totalGenerated = 0;
+                let totalConsumed = 0;
                 let maxVal = 0;
-                let finalGenerated = 0;
                 
-                // We will feed 8 blocks of 4096 (32768 total frames)
-                for (let block = 0; block < 8; block++) {
-                    const generated = bungee.process_audio(inputHeapPtr, numFrames, outputHeapPtr, outputFramesCap, ratio, 1.0);
-                    totalGenerated += generated;
-                    finalGenerated = generated;
+                // We will feed 100 blocks of 128 frames
+                for (let block = 0; block < 100; block++) {
+                    for (let i = 0; i < inputFramesNeeded; i++) {
+                        const val = Math.sin(phase);
+                        inputHeap[i * 2] = val;     // Left
+                        inputHeap[i * 2 + 1] = val; // Right
+                        phase += 2 * Math.PI * freq / sampleRate;
+                    }
+                
+                    const consumed = bungee.process_audio(inputHeapPtr, inputFramesNeeded, outputHeapPtr, outputFrames, ratio, 1.0);
+                    totalConsumed += consumed;
                     
-                    const outHeapView = new Float32Array(wasmModule.HEAPF32.buffer, outputHeapPtr, outputFramesCap * 2);
+                    const outHeapView = new Float32Array(wasmModule.HEAPF32.buffer, outputHeapPtr, outputFrames * 2);
                     
-                    for (let i = 0; i < generated; i++) {
+                    for (let i = 0; i < outputFrames; i++) {
                         const absVal = Math.abs(outHeapView[i * 2]);
                         if (absVal > maxVal) maxVal = absVal;
                     }
                 }
                 
-                log(`Bungee generated a total of ${totalGenerated} frames over 8 blocks.`);
+                log(`WSOLA consumed a total of ${totalConsumed} frames over 100 blocks.`);
                 log(`Maximum amplitude in output: ${maxVal.toFixed(6)}`);
                 
-                // Analyze the LAST output waveform block to look for phase destruction.
-                const outHeapView = new Float32Array(wasmModule.HEAPF32.buffer, outputHeapPtr, outputFramesCap * 2);
+                // Analyze the LAST output waveform block
+                const outHeapView = new Float32Array(wasmModule.HEAPF32.buffer, outputHeapPtr, outputFrames * 2);
                 
                 ctx2d.clearRect(0, 0, canvas.width, canvas.height);
                 
@@ -452,8 +453,8 @@
                 ctx2d.lineWidth = 1.5;
                 
                 // Draw the final generated buffer block
-                for (let i = 0; i < finalGenerated; i++) {
-                    const x = (i / finalGenerated) * canvas.width;
+                for (let i = 0; i < outputFrames; i++) {
+                    const x = (i / outputFrames) * canvas.width;
                     let val = outHeapView[i * 2]; // Left channel
                     if (Number.isNaN(val)) val = 0;
                     

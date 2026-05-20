@@ -26,6 +26,7 @@ export const DeckColumn: React.FC<DeckColumnProps> = ({ deckId }) => {
     setPitch, 
     nudgePitch, 
     toggleSync, 
+    toggleKeyLock,
     handleFxToggle,
     handleFxParamChange
   } = useDeckControl(deckId);
@@ -178,18 +179,26 @@ export const DeckColumn: React.FC<DeckColumnProps> = ({ deckId }) => {
         <div className={`w-[70px] h-full bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 rounded-xl flex flex-col items-center py-2 justify-between shadow-md shrink-0`}>
           <button 
             onClick={() => toggleSync(!state.sync)} 
-            className={`w-12 h-8 rounded-md border transition relative overflow-hidden group flex flex-col items-center justify-center mb-3 ${state.sync ? 'bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 text-green-700 dark:text-green-400' : 'bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
+            className={`w-12 h-6 rounded-md border transition relative overflow-hidden group flex flex-col items-center justify-center mb-1.5 ${state.sync ? 'bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 text-green-700 dark:text-green-400' : 'bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
           >
             {state.sync && <div className="w-full h-1 bg-green-500 absolute top-0"></div>}
             <span className="text-[10px] font-bold tracking-widest mt-0.5">SYNC</span>
           </button>
 
-          <button onClick={() => nudgePitch(0.01)} className="w-12 h-7 rounded-md bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 text-sm font-bold flex items-center justify-center transition">
+          <button 
+            onClick={() => toggleKeyLock()} 
+            className={`w-12 h-6 rounded-md border transition relative overflow-hidden group flex flex-col items-center justify-center mb-2 ${state.keyLock ? 'bg-purple-100 dark:bg-purple-900 border-purple-400 dark:border-purple-600 text-purple-700 dark:text-purple-400' : 'bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
+          >
+            {state.keyLock && <div className="w-full h-1 bg-purple-500 absolute top-0"></div>}
+            <span className="text-[10px] font-bold tracking-widest mt-0.5">KEY</span>
+          </button>
+
+          <button onClick={() => nudgePitch(0.01)} className="w-8 h-3 rounded bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 text-[8px] font-bold flex items-center justify-center transition">
             +
           </button>
           
           {/* Pitch Slider */}
-          <div className="flex-1 w-10 my-2 bg-slate-100 dark:bg-slate-900 rounded-md border border-slate-300 dark:border-slate-700 relative flex justify-center py-2 shadow-inner overflow-hidden touch-none" onPointerDown={handlePitchPointerDown} onWheel={handlePitchWheel} onDoubleClick={() => setPitch(1.0)}>
+          <div className="flex-1 w-10 my-1 bg-slate-100 dark:bg-slate-900 rounded-md border border-slate-300 dark:border-slate-700 relative flex justify-center py-2 shadow-inner overflow-hidden touch-none" onPointerDown={handlePitchPointerDown} onWheel={handlePitchWheel} onDoubleClick={() => setPitch(1.0)}>
             <input type="range" min="0.84" max="1.16" step="any" value={state.pitch} className="absolute inset-0 w-full h-full opacity-0 pointer-events-none" />
             <div className="w-0.5 bg-slate-400 dark:bg-black h-full rounded-full"></div>
             {/* Center zero line */}
@@ -203,13 +212,13 @@ export const DeckColumn: React.FC<DeckColumnProps> = ({ deckId }) => {
             </div>
           </div>
 
-          <button onClick={() => nudgePitch(-0.01)} className="w-12 h-7 rounded-md bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 text-sm font-bold flex items-center justify-center transition mb-3">
+          <button onClick={() => nudgePitch(-0.01)} className="w-8 h-3 rounded bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 text-[8px] font-bold flex items-center justify-center transition mb-1">
             -
           </button>
 
           <button 
             onClick={() => togglePlayback()} 
-            className={`w-14 h-14 rounded-full border shadow-md flex items-center justify-center transition-colors mb-3 ${state.isPlaying ? 'bg-blue-100 dark:bg-blue-900 border-blue-400 dark:border-blue-600 text-blue-600 dark:text-blue-400' : 'bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
+            className={`w-14 h-14 rounded-full border shadow-md flex items-center justify-center transition-colors mb-1 ${state.isPlaying ? 'bg-blue-100 dark:bg-blue-900 border-blue-400 dark:border-blue-600 text-blue-600 dark:text-blue-400' : 'bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600'}`}
           >
             {state.isPlaying ? (
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">

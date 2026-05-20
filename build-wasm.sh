@@ -24,9 +24,6 @@ mkdir -p public/worklets/wasm
 # -s ENVIRONMENT=worker: Target WebWorker/AudioWorklet
 
 emcc src/wasm/resampler.cpp \
-  -Isrc/wasm/bungee \
-  -Lsrc/wasm/bungee/build \
-  -lbungee -lpffft \
   -O3 \
   -msimd128 \
   -s EXPORT_ES6=1 \

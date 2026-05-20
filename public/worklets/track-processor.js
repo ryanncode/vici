@@ -95,7 +95,10 @@ class TrackProcessor extends AudioWorkletProcessor {
         this.localBuffer = new Float32Array(this.localCapacity * 2);
         this.playhead = 0;
         this.expectedPullFrame = 0;
-        if (this.bungee) this.bungee.reset();
+        if (this.bungee) {
+           this.bungee.reset();
+           this.bungeeFramesToFeed = undefined;
+        }
         console.log("TrackProcessor: LOAD_TRACK stream connected.");
       } else if (e.data.type === 'LOAD_TRACK_FULL') {
         this.isStreaming = false;
@@ -105,7 +108,10 @@ class TrackProcessor extends AudioWorkletProcessor {
         this.bufferLength = e.data.bufferLength || 0;
         this.trackSampleRate = e.data.trackSampleRate || sampleRate;
         this.playhead = 0;
-        if (this.bungee) this.bungee.reset();
+        if (this.bungee) {
+           this.bungee.reset();
+           this.bungeeFramesToFeed = undefined;
+        }
         console.log("TrackProcessor: LOAD_TRACK_FULL static buffer connected.");
       } else if (e.data.type === 'PLAY') {
         this.playing = true;
@@ -116,11 +122,17 @@ class TrackProcessor extends AudioWorkletProcessor {
           this.playhead = e.data.value * this.trackSampleRate;
           this.expectedPullFrame = this.playhead;
           this.port.postMessage({ type: 'SEEK_STREAM', frame: this.playhead });
-          if (this.bungee) this.bungee.reset();
+          if (this.bungee) {
+             this.bungee.reset();
+             this.bungeeFramesToFeed = undefined;
+          }
           if (this.resampler) this.resampler.reset();
         } else if (!this.isStreaming && this.fullBuffer) {
           this.playhead = e.data.value * this.trackSampleRate;
-          if (this.bungee) this.bungee.reset();
+          if (this.bungee) {
+             this.bungee.reset();
+             this.bungeeFramesToFeed = undefined;
+          }
           if (this.resampler) this.resampler.reset();
         }
       } else if (e.data.path === '/faust/pitch') {
@@ -231,9 +243,12 @@ class TrackProcessor extends AudioWorkletProcessor {
     
     // We fetch a block of frames.
     if (this.keyLock && this.bungee) {
-      const inputFramesNeeded = Math.ceil(outputFrames * ratio * 2);
+      if (this.bungeeFramesToFeed === undefined) {
+         this.bungeeFramesToFeed = 2048 + 512 + Math.ceil(outputFrames * ratio);
+      }
+      
       let framesAvailable = Math.floor(bufferLength - this.playhead);
-      const inputFrames = Math.min(inputFramesNeeded, framesAvailable);
+      const inputFrames = Math.min(this.bungeeFramesToFeed, framesAvailable);
       
       if (inputFrames <= 0) return true;
 
@@ -246,9 +261,11 @@ class TrackProcessor extends AudioWorkletProcessor {
         this.inputHeap[i * 2 + 1] = frame[1];
       }
 
-      const generated = this.bungee.process_audio(this.inputPtr, inputFrames, this.outputPtr, outputFrames, ratio, 1.0);
+      const consumed = this.bungee.process_audio(this.inputPtr, inputFrames, this.outputPtr, outputFrames, ratio, 1.0);
+      
+      this.bungeeFramesToFeed = consumed;
 
-      for (let i = 0; i < generated; i++) {
+      for (let i = 0; i < outputFrames; i++) {
         if (channelCount > 0) {
           let val = this.outputHeap[i * 2];
           if (val !== val || val > 10.0 || val < -10.0) val = 0;
@@ -260,12 +277,8 @@ class TrackProcessor extends AudioWorkletProcessor {
           output[1][i] = val;
         }
       }
-      for (let i = generated; i < outputFrames; i++) {
-        if (channelCount > 0) output[0][i] = 0;
-        if (channelCount > 1) output[1][i] = 0;
-      }
 
-      this.playhead += inputFrames;
+      this.playhead = Math.floor(this.playhead) + consumed;
     } else if (this.resampler) {
       const CROSSINGS = 32;
       const baseFrames = Math.ceil(outputFrames * ratio);
