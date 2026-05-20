@@ -155,7 +155,7 @@ export const MiniPlaylist: React.FC<MiniPlaylistProps> = ({ onExpandLibrary }) =
 
   return (
     <div 
-      className="w-full h-[150px] flex flex-col relative shrink-0 mt-0"
+      className="w-full flex-1 flex flex-col relative min-h-0"
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
@@ -164,7 +164,7 @@ export const MiniPlaylist: React.FC<MiniPlaylistProps> = ({ onExpandLibrary }) =
       <div className="h-[32px] bg-slate-100 dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 rounded-full flex items-center justify-between px-4 z-10 shrink-0 mb-2 shadow-sm">
         
         <div className="flex items-center gap-3">
-          <span className="text-[12px] font-bold uppercase tracking-widest text-slate-700 dark:text-slate-300">
+          <span className="text-[14px] font-bold uppercase tracking-widest text-slate-700 dark:text-slate-300">
             Mixer Queue
           </span>
           <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono font-bold bg-slate-200 dark:bg-slate-900/50 px-2 py-0.5 rounded-full border border-slate-300 dark:border-slate-700/50">
@@ -200,9 +200,8 @@ export const MiniPlaylist: React.FC<MiniPlaylistProps> = ({ onExpandLibrary }) =
       </div>
 
       {/* Track List */}
-      <div className="flex-1 overflow-y-auto pr-1 pb-2 space-y-px relative" style={{
-        scrollbarWidth: 'thin',
-        scrollbarColor: 'var(--tw-colors-slate-500) transparent'
+      <div className="flex-1 overflow-y-auto pr-1 pb-2 space-y-px relative scrollbar-hide" style={{
+        scrollbarWidth: 'none',
       }}>
         {tracks.length > 0 ? (
           tracks.map((track, idx) => (
@@ -223,27 +222,27 @@ export const MiniPlaylist: React.FC<MiniPlaylistProps> = ({ onExpandLibrary }) =
               
               {/* Title & Artist */}
               <div className="flex-1 flex items-baseline gap-2 truncate mr-2">
-                <span className="text-[12px] font-bold text-slate-700 dark:text-slate-300 truncate">{track.title || 'Unknown Title'}</span>
-                <span className="text-[11px] text-slate-500 truncate">{track.artist || 'Unknown Artist'}</span>
+                <span className="text-[14px] font-bold text-slate-700 dark:text-slate-300 truncate">{track.title || 'Unknown Title'}</span>
+                <span className="text-[13px] text-slate-500 truncate">{track.artist || 'Unknown Artist'}</span>
               </div>
               
               {/* BPM */}
-              <div className="w-8 text-right text-[11px] font-mono text-slate-500 dark:text-slate-400">
+              <div className="w-10 text-right text-[13px] font-mono text-slate-500 dark:text-slate-400">
                 {track.bpm ? track.bpm.toFixed(1) : '-'}
               </div>
               
               {/* Key */}
-              <div className="w-8 text-right text-[11px] font-mono text-slate-400 dark:text-slate-500">
+              <div className="w-8 text-right text-[13px] font-mono text-slate-400 dark:text-slate-500">
                 {track.key || '-'}
               </div>
 
               {/* Energy */}
-              <div className="w-8 text-right text-[11px] font-mono text-slate-400 dark:text-slate-500">
+              <div className="w-8 text-right text-[13px] font-mono text-slate-400 dark:text-slate-500">
                 {track.energy ? track.energy.toFixed(1) : '-'}
               </div>
               
               {/* Duration */}
-              <div className="w-10 text-right text-[11px] font-mono text-slate-400 dark:text-slate-500">
+              <div className="w-12 text-right text-[13px] font-mono text-slate-400 dark:text-slate-500">
                 {formatTime(track.duration)}
               </div>
               
