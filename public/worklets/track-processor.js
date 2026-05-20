@@ -74,6 +74,8 @@ class TrackProcessor extends AudioWorkletProcessor {
     this.isStreaming = false;
     this.fullBuffer = null;
     this.nudgeTarget = 0;
+    this.seekId = 0;
+    this.isSeekingStream = false;
 
     this.port.onmessage = async (e) => {
       if (e.data.type === 'INIT_WASM') {
@@ -96,6 +98,7 @@ class TrackProcessor extends AudioWorkletProcessor {
         this.localBuffer = new Float32Array(this.localCapacity * 2);
         this.playhead = 0;
         this.expectedPullFrame = 0;
+        this.isSeekingStream = false;
         if (this.bungee) {
            this.bungee.reset();
            this.bungeeFramesToFeed = undefined;
@@ -110,6 +113,7 @@ class TrackProcessor extends AudioWorkletProcessor {
         this.bufferLength = e.data.bufferLength || 0;
         this.trackSampleRate = e.data.trackSampleRate || sampleRate;
         this.playhead = 0;
+        this.isSeekingStream = false;
         if (this.bungee) {
            this.bungee.reset();
            this.bungeeFramesToFeed = undefined;
@@ -122,9 +126,16 @@ class TrackProcessor extends AudioWorkletProcessor {
         this.playing = false;
       } else if (e.data.type === 'SEEK') {
         if (this.isStreaming && this.ringBuffer) {
+          this.seekId = (this.seekId || 0) + 1;
+          this.isSeekingStream = true;
           this.playhead = e.data.value * this.trackSampleRate;
           this.expectedPullFrame = this.playhead;
-          this.port.postMessage({ type: 'SEEK_STREAM', frame: this.playhead });
+          
+          // Clear ring buffer immediately so we don't accidentally read stale data
+          Atomics.store(this.ringBuffer.state, this.ringBuffer.WRITE_PTR, 0);
+          Atomics.store(this.ringBuffer.state, this.ringBuffer.READ_PTR, 0);
+          
+          this.port.postMessage({ type: 'SEEK_STREAM', frame: this.playhead, seekId: this.seekId });
           if (this.bungee) {
              this.bungee.reset();
              this.bungeeFramesToFeed = undefined;
@@ -137,6 +148,10 @@ class TrackProcessor extends AudioWorkletProcessor {
              this.bungeeFramesToFeed = undefined;
           }
           if (this.resampler) this.resampler.reset();
+        }
+      } else if (e.data.type === 'SEEK_ACK') {
+        if (this.seekId === e.data.seekId) {
+          this.isSeekingStream = false;
         }
       } else if (e.data.path === '/faust/pitch') {
         this.playbackRate = e.data.value;
@@ -209,7 +224,7 @@ class TrackProcessor extends AudioWorkletProcessor {
       return true;
     }
 
-    if (this.isStreaming) {
+    if (this.isStreaming && !this.isSeekingStream) {
       // Limit pulling so we don't overwrite localBuffer data that the playhead hasn't reached yet
       const maxAhead = this.localCapacity - 8192; // keep safe margin
       const framesAhead = this.expectedPullFrame - this.playhead;

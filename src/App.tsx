@@ -10,7 +10,7 @@ import { Browser } from './components/Browser';
 import { Hotkeys } from './components/Hotkeys';
 import { useMixerStore } from './store/mixerStore';
 import { RotaryKnob } from './components/CenterMixer';
-import { useLibrary } from './hooks/useLibrary';
+import { useLibraryStore } from './store/libraryStore';
 import { useDeckControl } from './hooks/useDeckControl';
 import type { Track } from './types/mixer';
 
@@ -114,7 +114,7 @@ export default function App() {
   const setCrossfade = useMixerStore(state => state.setCrossfade);
   const masterVolume = useMixerStore(state => state.masterVolume);
   
-  const { displayTracks } = useLibrary();
+  const libraryTracks = useLibraryStore(state => state.library);
   const deckAControl = useDeckControl('A');
   const deckBControl = useDeckControl('B');
   
@@ -122,20 +122,22 @@ export default function App() {
   const [isMidiLearnActive, setIsMidiLearnActive] = useState(false);
 
   const getNextTrack = (currentTrackId?: string): Track | null => {
-    if (displayTracks.length === 0) return null;
-    if (!currentTrackId) return displayTracks[0] as Track;
-    const currentIndex = displayTracks.findIndex(t => t.id === currentTrackId);
-    if (currentIndex === -1) return displayTracks[0] as Track;
-    const nextIndex = (currentIndex + 1) % displayTracks.length;
-    return displayTracks[nextIndex] as Track;
+    if (libraryTracks.length === 0) return null;
+    if (!currentTrackId) return libraryTracks[0] as Track;
+    const currentIndex = libraryTracks.findIndex(t => t.id === currentTrackId);
+    if (currentIndex === -1) return libraryTracks[0] as Track;
+    const nextIndex = (currentIndex + 1) % libraryTracks.length;
+    return libraryTracks[nextIndex] as Track;
   };
 
   const handleTransitionComplete = (winningDeck: 'A' | 'B', nextTrack: Track) => {
     const engine = AudioEngine.getInstance();
     if (winningDeck === 'A') {
       const segments = nextTrack.segments || engine.deckA.segments;
+      const introSeg = segments.find(s => s.type !== 'intro');
+      const defaultIntro = introSeg ? introSeg.start : 0;
       const defaultOutro = segments.find(s => s.type === 'outro')?.start || (engine.deckA.loaded ? Math.max(0, engine.deckA.duration - 15) : 0);
-      setDeckState('A', { track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || defaultOutro, peaks: nextTrack.waveformPeaks || engine.deckA.peaks, segments });
+      setDeckState('A', { track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker !== undefined ? nextTrack.introMarker : defaultIntro, outroMarker: nextTrack.outroMarker !== undefined ? nextTrack.outroMarker : defaultOutro, peaks: nextTrack.waveformPeaks || engine.deckA.peaks, segments });
       setDeckState('B', { isPlaying: false });
       setCrossfade(0);
 
@@ -145,8 +147,10 @@ export default function App() {
       }
     } else {
       const segments = nextTrack.segments || engine.deckB.segments;
+      const introSeg = segments.find(s => s.type !== 'intro');
+      const defaultIntro = introSeg ? introSeg.start : 0;
       const defaultOutro = segments.find(s => s.type === 'outro')?.start || (engine.deckB.loaded ? Math.max(0, engine.deckB.duration - 15) : 0);
-      setDeckState('B', { track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || defaultOutro, peaks: nextTrack.waveformPeaks || engine.deckB.peaks, segments });
+      setDeckState('B', { track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker !== undefined ? nextTrack.introMarker : defaultIntro, outroMarker: nextTrack.outroMarker !== undefined ? nextTrack.outroMarker : defaultOutro, peaks: nextTrack.waveformPeaks || engine.deckB.peaks, segments });
       setDeckState('A', { isPlaying: false });
       setCrossfade(1);
 
@@ -161,12 +165,16 @@ export default function App() {
     const engine = AudioEngine.getInstance();
     if (winningDeck === 'A') {
       const segments = nextTrack.segments || engine.deckA.segments;
+      const introSeg = segments.find(s => s.type !== 'intro');
+      const defaultIntro = introSeg ? introSeg.start : 0;
       const defaultOutro = segments.find(s => s.type === 'outro')?.start || (engine.deckA.loaded ? Math.max(0, engine.deckA.duration - 15) : 0);
-      setDeckState('A', { track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || defaultOutro, peaks: nextTrack.waveformPeaks || engine.deckA.peaks, segments });
+      setDeckState('A', { track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker !== undefined ? nextTrack.introMarker : defaultIntro, outroMarker: nextTrack.outroMarker !== undefined ? nextTrack.outroMarker : defaultOutro, peaks: nextTrack.waveformPeaks || engine.deckA.peaks, segments });
     } else {
       const segments = nextTrack.segments || engine.deckB.segments;
+      const introSeg = segments.find(s => s.type !== 'intro');
+      const defaultIntro = introSeg ? introSeg.start : 0;
       const defaultOutro = segments.find(s => s.type === 'outro')?.start || (engine.deckB.loaded ? Math.max(0, engine.deckB.duration - 15) : 0);
-      setDeckState('B', { track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker || 0, outroMarker: nextTrack.outroMarker || defaultOutro, peaks: nextTrack.waveformPeaks || engine.deckB.peaks, segments });
+      setDeckState('B', { track: nextTrack, isPlaying: true, introMarker: nextTrack.introMarker !== undefined ? nextTrack.introMarker : defaultIntro, outroMarker: nextTrack.outroMarker !== undefined ? nextTrack.outroMarker : defaultOutro, peaks: nextTrack.waveformPeaks || engine.deckB.peaks, segments });
     }
   };
 
@@ -196,7 +204,7 @@ export default function App() {
   }, [isAutomixEnabled, deckATrack, deckBTrack]);
 
   useAutoMixer({
-    library: displayTracks as Track[],
+    library: libraryTracks as Track[],
     isAutomixEnabled: isAutomixEnabled,
     onTransitionStart: handleTransitionStart,
     onTransitionComplete: handleTransitionComplete,

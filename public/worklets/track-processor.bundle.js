@@ -1527,6 +1527,8 @@ var TrackProcessor = class extends AudioWorkletProcessor {
     this.isStreaming = false;
     this.fullBuffer = null;
     this.nudgeTarget = 0;
+    this.seekId = 0;
+    this.isSeekingStream = false;
     this.port.onmessage = async (e) => {
       if (e.data.type === "INIT_WASM") {
         try {
@@ -1547,6 +1549,7 @@ var TrackProcessor = class extends AudioWorkletProcessor {
         this.localBuffer = new Float32Array(this.localCapacity * 2);
         this.playhead = 0;
         this.expectedPullFrame = 0;
+        this.isSeekingStream = false;
         if (this.bungee) {
           this.bungee.reset();
           this.bungeeFramesToFeed = void 0;
@@ -1561,6 +1564,7 @@ var TrackProcessor = class extends AudioWorkletProcessor {
         this.bufferLength = e.data.bufferLength || 0;
         this.trackSampleRate = e.data.trackSampleRate || sampleRate;
         this.playhead = 0;
+        this.isSeekingStream = false;
         if (this.bungee) {
           this.bungee.reset();
           this.bungeeFramesToFeed = void 0;
@@ -1573,9 +1577,13 @@ var TrackProcessor = class extends AudioWorkletProcessor {
         this.playing = false;
       } else if (e.data.type === "SEEK") {
         if (this.isStreaming && this.ringBuffer) {
+          this.seekId = (this.seekId || 0) + 1;
+          this.isSeekingStream = true;
           this.playhead = e.data.value * this.trackSampleRate;
           this.expectedPullFrame = this.playhead;
-          this.port.postMessage({ type: "SEEK_STREAM", frame: this.playhead });
+          Atomics.store(this.ringBuffer.state, this.ringBuffer.WRITE_PTR, 0);
+          Atomics.store(this.ringBuffer.state, this.ringBuffer.READ_PTR, 0);
+          this.port.postMessage({ type: "SEEK_STREAM", frame: this.playhead, seekId: this.seekId });
           if (this.bungee) {
             this.bungee.reset();
             this.bungeeFramesToFeed = void 0;
@@ -1588,6 +1596,10 @@ var TrackProcessor = class extends AudioWorkletProcessor {
             this.bungeeFramesToFeed = void 0;
           }
           if (this.resampler) this.resampler.reset();
+        }
+      } else if (e.data.type === "SEEK_ACK") {
+        if (this.seekId === e.data.seekId) {
+          this.isSeekingStream = false;
         }
       } else if (e.data.path === "/faust/pitch") {
         this.playbackRate = e.data.value;
@@ -1651,7 +1663,7 @@ var TrackProcessor = class extends AudioWorkletProcessor {
       }
       return true;
     }
-    if (this.isStreaming) {
+    if (this.isStreaming && !this.isSeekingStream) {
       const maxAhead = this.localCapacity - 8192;
       const framesAhead = this.expectedPullFrame - this.playhead;
       let maxPullFrames = 4096;

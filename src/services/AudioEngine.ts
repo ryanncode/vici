@@ -68,7 +68,7 @@ export class Deck {
           if (AudioEngine.getInstance().decodingWorker) {
             AudioEngine.getInstance().decodingWorker!.postMessage({
               type: 'SEEK_STREAM',
-              payload: { deckId: this.id, frame: e.data.frame }
+              payload: { deckId: this.id, frame: e.data.frame, seekId: e.data.seekId }
             });
           }
         } else if (e.data.type === 'WASM_ERROR') {
@@ -434,6 +434,16 @@ export class AudioEngine {
       // Initialize background decoding worker
       try {
         this.decodingWorker = new Worker(new URL('../audio/decoding.worker.ts', import.meta.url), { type: 'module' });
+        this.decodingWorker.addEventListener('message', (e: MessageEvent) => {
+           if (e.data.type === 'SEEK_ACK') {
+              const targetDeck = e.data.deckId === 'A' ? this.deckA : this.deckB;
+              // @ts-expect-error trackNode is private but we need to send message
+              if (targetDeck && targetDeck.trackNode) {
+                 // @ts-expect-error trackNode is private
+                 targetDeck.trackNode.port.postMessage({ type: 'SEEK_ACK', seekId: e.data.seekId });
+              }
+           }
+        });
         this.decodingWorker.postMessage({ type: 'INIT' });
       } catch (e) {
         console.warn("Could not load decoding worker", e);
@@ -456,8 +466,8 @@ export class AudioEngine {
 
   public setCrossfadeValue(value: number, curve: 'constant_power' | 'linear' | 'cut' = 'constant_power'): void {
     // Value range: 0 (Deck A) to 1 (Deck B)
-    let gainA = 1.0;
-    let gainB = 1.0;
+    let gainA: number;
+    let gainB: number;
 
     if (curve === 'linear') {
       gainA = 1.0 - value;

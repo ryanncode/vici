@@ -125,7 +125,7 @@ self.onmessage = async (e: MessageEvent) => {
     
     pushInterleavedAsyncStateful(deckId);
   } else if (type === 'SEEK_STREAM') {
-    const { deckId, frame } = payload;
+    const { deckId, frame, seekId } = payload;
     const stream = streams.get(deckId);
     if (stream && stream.buffers) {
       const targetFrame = Math.floor(frame);
@@ -137,6 +137,7 @@ self.onmessage = async (e: MessageEvent) => {
         pushInterleavedAsyncStateful(deckId);
       }
     }
+    self.postMessage({ type: 'SEEK_ACK', deckId, seekId });
   }
 };
 

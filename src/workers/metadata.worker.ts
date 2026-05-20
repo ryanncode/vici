@@ -57,9 +57,15 @@ function analyzeSegmentsLogic(peaks: Float32Array, duration: number, originalBpm
   const numPeaks = peaks.length;
   const secondsPerPeak = duration / numPeaks;
   
+  const bpm = originalBpm > 0 ? originalBpm : 120;
+  // Use a 16-bar phrase length for quantization
+  const phraseLength = (60 / bpm) * 64; 
+  
   // 1. Smoothen the peaks (moving average) to get broader energy levels
-  const smoothWindow = Math.ceil(4.0 / secondsPerPeak); // ~4 seconds window
+  const smoothWindow = Math.ceil(phraseLength / secondsPerPeak / 4); // smooth over 4 bars roughly
   const smoothPeaks = new Float32Array(numPeaks);
+  let globalSum = 0;
+  
   for (let i = 0; i < numPeaks; i++) {
     let sum = 0;
     let count = 0;
@@ -67,10 +73,24 @@ function analyzeSegmentsLogic(peaks: Float32Array, duration: number, originalBpm
       sum += peaks[j];
       count++;
     }
-    smoothPeaks[i] = sum / count;
+    const avg = sum / count;
+    smoothPeaks[i] = avg;
+    globalSum += avg;
   }
 
-  // 2. Identify segments by applying thresholds
+  const mean = globalSum / numPeaks;
+  let varianceSum = 0;
+  for (let i = 0; i < numPeaks; i++) {
+    varianceSum += Math.pow(smoothPeaks[i] - mean, 2);
+  }
+  const stdDev = Math.sqrt(varianceSum / numPeaks);
+
+  // Dynamic Thresholds
+  const lowThreshold = Math.max(0.1, mean - (0.5 * stdDev));
+  const highThreshold = mean + (0.5 * stdDev);
+  const midThreshold = mean;
+
+  // 2. Identify segments by applying dynamic thresholds
   const rawSegments: TrackSegment[] = [];
   let currentType: TrackSegment['type'] | null = null;
   let currentStart = 0;
@@ -79,11 +99,11 @@ function analyzeSegmentsLogic(peaks: Float32Array, duration: number, originalBpm
     const val = smoothPeaks[i];
     let type: TrackSegment['type'];
     
-    if (val < 0.25) {
-      type = 'intro';
-    } else if (val > 0.65) {
+    if (val < lowThreshold) {
+      type = 'intro'; // default low energy to intro/outro, we'll fix later
+    } else if (val > highThreshold) {
       type = 'chorus';
-    } else if (val > 0.45) {
+    } else if (val > midThreshold) {
       type = 'bridge';
     } else {
       type = 'verse';
@@ -112,10 +132,10 @@ function analyzeSegmentsLogic(peaks: Float32Array, duration: number, originalBpm
     });
   }
 
-  // 3. Clean up
   if (rawSegments.length === 0) return [];
   
-  const minDuration = 8.0;
+  // 3. Clean up and Quantize to Phrase Lengths
+  const minDuration = phraseLength / 4; // minimum 4 bars
   const cleaned: TrackSegment[] = [rawSegments[0]];
   
   for (let i = 1; i < rawSegments.length; i++) {
@@ -129,11 +149,33 @@ function analyzeSegmentsLogic(peaks: Float32Array, duration: number, originalBpm
     }
   }
   
-  const bpm = originalBpm > 0 ? originalBpm : 120;
-  const phraseLength = (60 / bpm) * 32;
-  const subdivided: TrackSegment[] = [];
-  
+  // Quantize boundaries to the nearest phrase multiple
+  const quantized: TrackSegment[] = [];
   for (const seg of cleaned) {
+    const qStart = Math.round(seg.start / (phraseLength / 4)) * (phraseLength / 4);
+    const qEnd = Math.round(seg.end / (phraseLength / 4)) * (phraseLength / 4);
+    if (qEnd > qStart) {
+      quantized.push({
+        start: qStart,
+        end: qEnd,
+        type: seg.type,
+        color: seg.color
+      });
+    }
+  }
+
+  // Ensure contiguous
+  for (let i = 0; i < quantized.length - 1; i++) {
+    quantized[i].end = quantized[i + 1].start;
+  }
+  if (quantized.length > 0) {
+    quantized[quantized.length - 1].end = duration;
+    quantized[0].start = 0;
+  }
+
+  // Subdivide excessively long segments
+  const subdivided: TrackSegment[] = [];
+  for (const seg of quantized) {
     const segDur = seg.end - seg.start;
     if (segDur > phraseLength * 1.5) {
       const numPieces = Math.ceil(segDur / phraseLength);
@@ -151,43 +193,43 @@ function analyzeSegmentsLogic(peaks: Float32Array, duration: number, originalBpm
     }
   }
   
-  const mixOutWindowStart = Math.max(duration / 2, duration - Math.min(180, duration * 0.35));
-  let foundOutroDrop = false;
-  
+  // 4. Smart Intro/Outro Locking
+  // Fix intro: all low-energy blocks at the start until the first verse/chorus/bridge
+  let hitMainBody = false;
   for (let i = 0; i < subdivided.length; i++) {
     const seg = subdivided[i];
-    if (seg.start >= mixOutWindowStart && seg.type !== 'chorus') {
-      let hasChorusAfter = false;
-      for (let j = i + 1; j < subdivided.length; j++) {
-        if (subdivided[j].type === 'chorus') {
-          hasChorusAfter = true;
-          break;
-        }
-      }
-      
-      if (!hasChorusAfter) {
-        seg.type = 'outro';
-        seg.color = getColorForSegmentType('outro');
-        for (let j = i + 1; j < subdivided.length; j++) {
-           subdivided[j].type = 'outro';
-           subdivided[j].color = getColorForSegmentType('outro');
-        }
-        foundOutroDrop = true;
-        break; 
-      }
+    if (seg.type === 'intro' && !hitMainBody) {
+       // Keep as intro
+    } else {
+       if (seg.type === 'intro') {
+           // We're in the body but hit a low energy spot, call it a breakdown/verse
+           seg.type = 'verse';
+           seg.color = getColorForSegmentType('verse');
+       }
+       hitMainBody = true;
     }
   }
-  
-  if (!foundOutroDrop && subdivided.length > 0) {
-    const forcedPhrases = duration > 300 ? 4 : 2; 
-    const forceOutroStart = Math.max(duration / 2, duration - phraseLength * forcedPhrases);
-    for (let i = subdivided.length - 1; i >= 0; i--) {
-      const seg = subdivided[i];
-      if (seg.start >= forceOutroStart) {
-        seg.type = 'outro';
-        seg.color = getColorForSegmentType('outro');
-      }
-    }
+
+  // Find last major energy section to set Outro
+  let lastMajorIndex = -1;
+  for (let i = subdivided.length - 1; i >= 0; i--) {
+     if (subdivided[i].type === 'chorus' || subdivided[i].type === 'bridge') {
+         lastMajorIndex = i;
+         break;
+     }
+  }
+
+  // Convert everything after the last major peak to Outro
+  if (lastMajorIndex !== -1 && lastMajorIndex < subdivided.length - 1) {
+     for (let i = lastMajorIndex + 1; i < subdivided.length; i++) {
+        subdivided[i].type = 'outro';
+        subdivided[i].color = getColorForSegmentType('outro');
+     }
+  } else if (subdivided.length > 0) {
+     // Fallback if no clear peak structure: last phrase is outro
+     const lastSeg = subdivided[subdivided.length - 1];
+     lastSeg.type = 'outro';
+     lastSeg.color = getColorForSegmentType('outro');
   }
 
   return subdivided;

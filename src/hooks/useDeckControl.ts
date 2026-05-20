@@ -111,7 +111,8 @@ export function useDeckControl(deckId: 'A' | 'B') {
          }
       }
 
-      const intro = track.introMarker !== undefined ? track.introMarker : 0;
+      const introSeg = segments.find(s => s.type !== 'intro');
+      const intro = track.introMarker !== undefined ? track.introMarker : (introSeg ? introSeg.start : 0);
       let outro = track.outroMarker;
       
       if (outro === undefined) {
