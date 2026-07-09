@@ -1,4 +1,11 @@
-# Vici
+<div align="center">
+  <h1>Vici</h1>
+  <p>
+    <a href="https://woundup.here/vici"><b>Wound Up Features</b></a> •
+    <a href="https://vici.woundup.here"><b>Launch DJ Tool</b></a>
+  </p>
+</div>
+
 
 Vici is a high-performance, web-based dual-deck DJ auto-mixing application. Built with React 18, Zustand, TypeScript, and the Web Audio API (via FAUST and custom AudioWorklets), Vici acts as an autonomous virtual DJ, allowing users to load local music directories, organize playlists, manipulate audio in real-time, and let the engine seamlessly crossfade between tracks completely hands-free.
 
