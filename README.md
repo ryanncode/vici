@@ -1,8 +1,9 @@
 <div align="center">
   <h1>Vici</h1>
   <p>
-    <a href="https://woundup.here/vici"><b>Wound Up Features</b></a> •
-    <a href="https://vici.woundup.here"><b>Launch DJ Tool</b></a>
+    <a href="https://woundup.here/vici"><b>About & Architecture</b></a>
+    &nbsp;&nbsp;&nbsp;&nbsp; | &nbsp;&nbsp;&nbsp;&nbsp;
+    <a href="https://vici.woundup.here"><b>Launch Web App</b></a>
   </p>
 </div>
 
