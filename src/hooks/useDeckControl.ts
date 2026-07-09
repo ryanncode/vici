@@ -23,6 +23,10 @@ export function useDeckControl(deckId: 'A' | 'B') {
       
       let track = { ...inputTrack } as Track;
       
+      if (track.id) {
+        useLibraryStore.getState().markTrackPlayed(track.id);
+      }
+      
       // Dynamically fetch handles if missing (e.g. track loaded from M3U playlist before library was selected)
       if (!track.fileHandle && !track.rawFile && track.id) {
          const handles = useLibraryStore.getState().sessionHandles[track.id];

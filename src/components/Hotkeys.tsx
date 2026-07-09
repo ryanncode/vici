@@ -1,8 +1,42 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { AudioEngine } from '../services/AudioEngine';
 
 export const Hotkeys: React.FC = () => {
   const [maxSampleRate, setMaxSampleRate] = useState<string>(() => localStorage.getItem('vici_max_samplerate') || '0');
   const [headroom, setHeadroom] = useState<string>(() => localStorage.getItem('vici_headroom') || '-3');
+
+  const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedDevice, setSelectedDevice] = useState<string>(() => localStorage.getItem('vici_cue_device') || 'default');
+  const [cueVolume, setCueVolume] = useState<number>(() => parseFloat(localStorage.getItem('vici_cue_volume') || '1.0'));
+
+  useEffect(() => {
+    const fetchDevices = async () => {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const audioOutputs = devices.filter(d => d.kind === 'audiooutput');
+        setAudioDevices(audioOutputs);
+      } catch (err) {
+        console.warn("Could not enumerate audio devices", err);
+      }
+    };
+    fetchDevices();
+    navigator.mediaDevices.addEventListener('devicechange', fetchDevices);
+    return () => navigator.mediaDevices.removeEventListener('devicechange', fetchDevices);
+  }, []);
+
+  const handleDeviceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    setSelectedDevice(val);
+    localStorage.setItem('vici_cue_device', val);
+    AudioEngine.getInstance().setHeadphoneDevice(val);
+  };
+
+  const handleCueVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseFloat(e.target.value);
+    setCueVolume(val);
+    localStorage.setItem('vici_cue_volume', val.toString());
+    AudioEngine.getInstance().setHeadphoneVolume(val);
+  };
 
   const handleSampleRateChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
@@ -88,6 +122,40 @@ export const Hotkeys: React.FC = () => {
               <option value="-6">-6.0 dB</option>
               <option value="-9">-9.0 dB (Safe)</option>
             </select>
+          </div>
+          <div className="p-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-700/50">
+            <div>
+              <div className="text-sm font-bold text-slate-700 dark:text-slate-300">Alternate Headphone Output</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">Select a secondary audio device for pre-fader Cue monitoring.</div>
+            </div>
+            <select
+              value={selectedDevice}
+              onChange={handleDeviceChange}
+              className="bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded px-3 py-1.5 text-sm text-slate-700 dark:text-slate-300 outline-none w-[200px]"
+            >
+              <option value="default">Default Device</option>
+              {audioDevices.map(d => (
+                <option key={d.deviceId} value={d.deviceId}>
+                  {d.label || `Device ${d.deviceId.substring(0, 5)}...`}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="p-4 flex items-center justify-between">
+            <div>
+              <div className="text-sm font-bold text-slate-700 dark:text-slate-300">Headphone Volume</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">Independent volume control for the cue output.</div>
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min="0" max="2" step="0.01"
+                value={cueVolume}
+                onChange={handleCueVolumeChange}
+                className="w-32"
+              />
+              <span className="text-xs font-mono w-8 text-right text-slate-500">{Math.round(cueVolume * 100)}%</span>
+            </div>
           </div>
         </div>
 

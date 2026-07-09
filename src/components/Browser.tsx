@@ -1,5 +1,5 @@
 import React from 'react';
-import { ListMusic, FolderSearch, Trash2, ArrowLeftSquare, ArrowRightSquare } from 'lucide-react';
+import { ListMusic, FolderSearch, Trash2, ArrowLeftSquare, ArrowRightSquare, Check } from 'lucide-react';
 import { useLibrary } from '../hooks/useLibrary';
 import { useDeckControl } from '../hooks/useDeckControl';
 import { useLibraryStore } from '../store/libraryStore';
@@ -16,6 +16,7 @@ const formatDuration = (seconds: number | string) => {
 export const Browser = React.memo(function Browser() {
   const deckAControl = useDeckControl('A');
   const deckBControl = useDeckControl('B');
+  const playedTrackIds = useLibraryStore(state => state.playedTrackIds);
   
   const { 
     displayTracks,
@@ -281,7 +282,13 @@ export const Browser = React.memo(function Browser() {
                 className={`grid grid-cols-[1fr_1fr_60px_60px_60px_60px_100px] gap-4 px-4 py-2 even:bg-black/[0.02] dark:even:bg-white/[0.02] hover:bg-slate-200/50 dark:hover:bg-slate-800/50 rounded-md items-center group transition cursor-pointer ${draggedIdx === idx ? 'opacity-50' : ''}`}
               >
                 <div className="font-medium text-sm text-slate-800 dark:text-slate-200 truncate flex items-center gap-2">
-                  <div className="w-4 text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300 cursor-grab">≡</div>
+                  <div className="w-4 flex items-center justify-center">
+                    {playedTrackIds.includes(track.id) ? (
+                      <Check size={14} className="text-emerald-500" />
+                    ) : (
+                      <div className="text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300 cursor-grab">≡</div>
+                    )}
+                  </div>
                   {track.title}
                 </div>
                 <div className="text-xs text-slate-500 dark:text-slate-400 truncate">{track.artist}</div>

@@ -269,5 +269,11 @@ with {
     r_out = r_delayed * gr_smooth;
 };
 
-// Main processing chain with input sanitization!
-process = (+ (denormal_dc), + (denormal_dc)) : eq : phaser_fx : roll_fx : gate_fx : compressor_fx : dj_filter : *(volume), *(volume) : delay_fx : reverb_fx : siren_fx : noise_fx : master_limiter : (- (denormal_dc), - (denormal_dc));
+// 4-Channel Routing (Ch 1/2: Master, Ch 3/4: Cue)
+raw_signal = (+ (denormal_dc), + (denormal_dc)) : eq : dj_filter;
+
+master_path = raw_signal : phaser_fx : roll_fx : gate_fx : compressor_fx : *(volume), *(volume) : delay_fx : reverb_fx : siren_fx : noise_fx : master_limiter : (- (denormal_dc), - (denormal_dc));
+cue_path = raw_signal; // Pure pre-fader, pre-FX signal for headphone cueing
+
+// process outputs 4 channels
+process = raw_signal <: master_path, cue_path;

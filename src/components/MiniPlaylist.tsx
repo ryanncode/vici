@@ -5,7 +5,7 @@ import { useDeckControl } from '../hooks/useDeckControl';
 import type { Track } from '../types/mixer';
 import { parseM3U } from '../utils/m3uParser';
 import { db } from '../services/Database';
-import { Settings2 } from 'lucide-react';
+import { Settings2, Check } from 'lucide-react';
 import { SortSettings } from './SortSettings';
 
 interface MiniPlaylistProps {
@@ -15,6 +15,7 @@ interface MiniPlaylistProps {
 export const MiniPlaylist: React.FC<MiniPlaylistProps> = ({ onExpandLibrary }) => {
   const library = useLibraryStore(state => state.library);
   const setLibrary = useLibraryStore(state => state.setLibrary);
+  const playedTrackIds = useLibraryStore(state => state.playedTrackIds);
   const deckA = useDeckControl('A');
   const deckB = useDeckControl('B');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -215,9 +216,13 @@ export const MiniPlaylist: React.FC<MiniPlaylistProps> = ({ onExpandLibrary }) =
               className={`flex items-center px-2 py-0.5 even:bg-black/[0.02] dark:even:bg-white/[0.02] hover:bg-slate-200/50 dark:hover:bg-slate-800/50 rounded-sm group transition-colors cursor-pointer ${draggedIdx === idx ? 'opacity-50' : ''}`}
             >
               
-              {/* Drag Handle */}
-              <div className="w-4 text-slate-300 dark:text-slate-600 group-hover:text-slate-500 dark:group-hover:text-slate-400 cursor-grab text-[11px]">
-                ≡
+              {/* Drag Handle / Check */}
+              <div className="w-4 flex items-center justify-center text-[11px]">
+                {playedTrackIds.includes(track.id!) ? (
+                  <Check size={12} className="text-emerald-500" />
+                ) : (
+                  <span className="text-slate-300 dark:text-slate-600 group-hover:text-slate-500 dark:group-hover:text-slate-400 cursor-grab">≡</span>
+                )}
               </div>
               
               {/* Title & Artist */}

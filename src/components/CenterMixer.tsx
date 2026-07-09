@@ -1,6 +1,7 @@
 import React, { type ChangeEvent, useEffect, useRef, useState } from 'react';
 import { useMixerStore } from '../store/mixerStore';
 import { AudioEngine } from '../services/AudioEngine';
+import { Headphones } from 'lucide-react';
 
 export const RotaryKnob = ({ 
   label, 
@@ -248,6 +249,24 @@ export const CenterMixer: React.FC = () => {
     throttledSetDeckState(deckId, 'filter', value);
   };
 
+  const handleCueToggle = (deckId: 'A' | 'B') => {
+    const currentState = deckId === 'A' ? deckA.isCue : deckB.isCue;
+    const newState = !currentState;
+    
+    const engine = AudioEngine.getInstance();
+    const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
+    if (deckEngine) {
+      deckEngine.setCueState(newState);
+    }
+    
+    useMixerStore.setState(state => ({
+      [deckId === 'A' ? 'deckA' : 'deckB']: {
+        ...state[deckId === 'A' ? 'deckA' : 'deckB'],
+        isCue: newState
+      }
+    }));
+  };
+
   const lastFaderWheelTimeRef = useRef(0);
 
   const handleFaderWheel = (e: React.WheelEvent<HTMLDivElement>, deckId: 'A' | 'B', currentValue: number) => {
@@ -351,29 +370,38 @@ export const CenterMixer: React.FC = () => {
           <RotaryKnob label="Filter" size="sm" color="blue" min={-100} max={100} step={1} value={deckA.filter} onChange={(v) => handleFilterChange('A', v)} onDoubleClick={() => handleFilterChange('A', 0)} />
           
           {/* Fader & VU Block */}
-          <div className="flex items-center gap-2 mt-1 h-[120px]">
-            <VUMeter deckId="A" />
-            <div className="h-full w-6 bg-slate-100 dark:bg-slate-950 rounded-lg flex justify-center py-1 border border-slate-300 dark:border-slate-900 shadow-inner relative touch-none" onPointerDown={(e) => handleFaderPointerDown(e, 'A', deckA.volume)} onWheel={(e) => handleFaderWheel(e, 'A', deckA.volume)} onDoubleClick={() => handleVolumeChange('A', 1.0)}>
-              <input 
-                type="range" 
-                min="0" max="1.5" step="0.01" 
-                value={deckA.volume} 
-                onChange={(e) => handleVolumeChange('A', parseFloat(e.target.value))} 
-                onDoubleClick={() => handleVolumeChange('A', 1.0)} 
-                
-                className="absolute inset-0 w-full h-full opacity-0 cursor-ns-resize z-10"
-                style={{ writingMode: 'vertical-lr' } as React.CSSProperties}
-              />
-              <div className="w-1 bg-slate-300 dark:bg-slate-900 h-full rounded-full"></div>
-              {/* Fader Cap */}
-              <div 
-                className="absolute w-full h-5 bg-slate-200 dark:bg-slate-800 border-2 border-slate-400 dark:border-slate-600 rounded flex items-center justify-center shadow-lg pointer-events-none"
-                style={{ bottom: `${(deckA.volume / 1.5) * 100}%`, transform: 'translateY(50%)' }}
-              >
-                <div className="w-full h-1 bg-white/60 dark:bg-white/20"></div>
+          <div className="flex flex-col items-center gap-1 mt-1">
+            <button 
+              onClick={() => handleCueToggle('A')}
+              className={`w-12 h-6 rounded flex items-center justify-center border transition-colors shadow-sm ${deckA.isCue ? 'bg-orange-500 text-white border-orange-400' : 'bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-700 hover:bg-slate-300 dark:hover:bg-slate-700'}`}
+              title="Headphone Cue"
+            >
+              <Headphones size={14} />
+            </button>
+            <div className="flex items-center gap-2 h-[120px]">
+              <VUMeter deckId="A" />
+              <div className="h-full w-6 bg-slate-100 dark:bg-slate-950 rounded-lg flex justify-center py-1 border border-slate-300 dark:border-slate-900 shadow-inner relative touch-none" onPointerDown={(e) => handleFaderPointerDown(e, 'A', deckA.volume)} onWheel={(e) => handleFaderWheel(e, 'A', deckA.volume)} onDoubleClick={() => handleVolumeChange('A', 1.0)}>
+                <input 
+                  type="range" 
+                  min="0" max="1.5" step="0.01" 
+                  value={deckA.volume} 
+                  onChange={(e) => handleVolumeChange('A', parseFloat(e.target.value))} 
+                  onDoubleClick={() => handleVolumeChange('A', 1.0)} 
+                  
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-ns-resize z-10"
+                  style={{ writingMode: 'vertical-lr' } as React.CSSProperties}
+                />
+                <div className="w-1 bg-slate-300 dark:bg-slate-900 h-full rounded-full"></div>
+                {/* Fader Cap */}
+                <div 
+                  className="absolute w-full h-5 bg-slate-200 dark:bg-slate-800 border-2 border-slate-400 dark:border-slate-600 rounded flex items-center justify-center shadow-lg pointer-events-none"
+                  style={{ bottom: `${(deckA.volume / 1.5) * 100}%`, transform: 'translateY(50%)' }}
+                >
+                  <div className="w-full h-1 bg-white/60 dark:bg-white/20"></div>
+                </div>
               </div>
+              <VUMeter deckId="A" />
             </div>
-            <VUMeter deckId="A" />
           </div>
         </div>
 
@@ -388,29 +416,38 @@ export const CenterMixer: React.FC = () => {
           <RotaryKnob label="Filter" size="sm" color="amber" min={-100} max={100} step={1} value={deckB.filter} onChange={(v) => handleFilterChange('B', v)} onDoubleClick={() => handleFilterChange('B', 0)} />
           
           {/* Fader & VU Block */}
-          <div className="flex items-center gap-2 mt-1 h-[120px]">
-            <VUMeter deckId="B" />
-            <div className="h-full w-6 bg-slate-100 dark:bg-slate-950 rounded-lg flex justify-center py-1 border border-slate-300 dark:border-slate-900 shadow-inner relative touch-none" onPointerDown={(e) => handleFaderPointerDown(e, 'B', deckB.volume)} onWheel={(e) => handleFaderWheel(e, 'B', deckB.volume)} onDoubleClick={() => handleVolumeChange('B', 1.0)}>
-              <input 
-                type="range" 
-                min="0" max="1.5" step="0.01" 
-                value={deckB.volume} 
-                onChange={(e) => handleVolumeChange('B', parseFloat(e.target.value))} 
-                onDoubleClick={() => handleVolumeChange('B', 1.0)} 
-                
-                className="absolute inset-0 w-full h-full opacity-0 cursor-ns-resize z-10"
-                style={{ writingMode: 'vertical-lr' } as React.CSSProperties}
-              />
-              <div className="w-1 bg-slate-300 dark:bg-slate-900 h-full rounded-full"></div>
-              {/* Fader Cap */}
-              <div 
-                className="absolute w-full h-5 bg-slate-200 dark:bg-slate-800 border-2 border-slate-400 dark:border-slate-600 rounded flex items-center justify-center shadow-lg pointer-events-none"
-                style={{ bottom: `${(deckB.volume / 1.5) * 100}%`, transform: 'translateY(50%)' }}
-              >
-                <div className="w-full h-1 bg-white/60 dark:bg-white/20"></div>
+          <div className="flex flex-col items-center gap-1 mt-1">
+            <button 
+              onClick={() => handleCueToggle('B')}
+              className={`w-12 h-6 rounded flex items-center justify-center border transition-colors shadow-sm ${deckB.isCue ? 'bg-orange-500 text-white border-orange-400' : 'bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-700 hover:bg-slate-300 dark:hover:bg-slate-700'}`}
+              title="Headphone Cue"
+            >
+              <Headphones size={14} />
+            </button>
+            <div className="flex items-center gap-2 h-[120px]">
+              <VUMeter deckId="B" />
+              <div className="h-full w-6 bg-slate-100 dark:bg-slate-950 rounded-lg flex justify-center py-1 border border-slate-300 dark:border-slate-900 shadow-inner relative touch-none" onPointerDown={(e) => handleFaderPointerDown(e, 'B', deckB.volume)} onWheel={(e) => handleFaderWheel(e, 'B', deckB.volume)} onDoubleClick={() => handleVolumeChange('B', 1.0)}>
+                <input 
+                  type="range" 
+                  min="0" max="1.5" step="0.01" 
+                  value={deckB.volume} 
+                  onChange={(e) => handleVolumeChange('B', parseFloat(e.target.value))} 
+                  onDoubleClick={() => handleVolumeChange('B', 1.0)} 
+                  
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-ns-resize z-10"
+                  style={{ writingMode: 'vertical-lr' } as React.CSSProperties}
+                />
+                <div className="w-1 bg-slate-300 dark:bg-slate-900 h-full rounded-full"></div>
+                {/* Fader Cap */}
+                <div 
+                  className="absolute w-full h-5 bg-slate-200 dark:bg-slate-800 border-2 border-slate-400 dark:border-slate-600 rounded flex items-center justify-center shadow-lg pointer-events-none"
+                  style={{ bottom: `${(deckB.volume / 1.5) * 100}%`, transform: 'translateY(50%)' }}
+                >
+                  <div className="w-full h-1 bg-white/60 dark:bg-white/20"></div>
+                </div>
               </div>
+              <VUMeter deckId="B" />
             </div>
-            <VUMeter deckId="B" />
           </div>
         </div>
 

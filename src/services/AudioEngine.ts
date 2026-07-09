@@ -41,9 +41,14 @@ export class Deck {
   }
   public mute: boolean = false;
 
-  constructor(id: 'A' | 'B', outputNode: AudioNode) {
+  public outputNode: AudioNode;
+  public cueOutputNode: AudioNode;
+  public cueGainNode!: GainNode;
+
+  constructor(id: 'A' | 'B', outputNode: AudioNode, cueOutputNode: AudioNode) {
     this.id = id;
     this.outputNode = outputNode;
+    this.cueOutputNode = cueOutputNode;
   }
 
   public async init(audioContext: AudioContext) {
@@ -119,7 +124,25 @@ export class Deck {
       // 3. Connect Graph: Track -> Faust -> Output
       if (this.faustNode) {
         this.trackNode.connect(this.faustNode);
-        this.faustNode.connect(this.outputNode);
+        
+        // Split Faust 4-channel output
+        const splitter = audioContext.createChannelSplitter(4);
+        this.faustNode.connect(splitter);
+
+        const masterMerger = audioContext.createChannelMerger(2);
+        splitter.connect(masterMerger, 0, 0); // Ch 1 to L
+        splitter.connect(masterMerger, 1, 1); // Ch 2 to R
+        masterMerger.connect(this.outputNode);
+
+        const cueMerger = audioContext.createChannelMerger(2);
+        splitter.connect(cueMerger, 2, 0); // Ch 3 to L
+        splitter.connect(cueMerger, 3, 1); // Ch 4 to R
+
+        this.cueGainNode = audioContext.createGain();
+        this.cueGainNode.gain.value = 0.0; // Cue off by default
+        cueMerger.connect(this.cueGainNode);
+        this.cueGainNode.connect(this.cueOutputNode);
+
       } else {
         this.trackNode.connect(this.outputNode);
       }
@@ -405,6 +428,12 @@ export class Deck {
   public setTrackGainDb(db: number): void {
     this.trackGainDb = db;
   }
+
+  public setCueState(isCue: boolean): void {
+    if (this.cueGainNode) {
+      this.cueGainNode.gain.value = isCue ? 1.0 : 0.0;
+    }
+  }
 }
 
 export class AudioEngine {
@@ -414,6 +443,11 @@ export class AudioEngine {
   public deckB!: Deck;
   public masterGainNode!: GainNode;
   public headroomGainNode!: GainNode;
+  
+  public cueBusGainNode!: GainNode;
+  public cueDestination!: MediaStreamAudioDestinationNode;
+  public cueAudioElement!: HTMLAudioElement;
+
   private initialized: boolean = false;
   private initPromise: Promise<void> | null = null;
   public decodingWorker: Worker | null = null;
@@ -442,9 +476,18 @@ export class AudioEngine {
     // so we just pass the signal straight through to the destination.
     this.masterGainNode.connect(this.headroomGainNode);
     this.headroomGainNode.connect(this.context.destination);
-    
-    this.deckA = new Deck('A', this.masterGainNode);
-    this.deckB = new Deck('B', this.masterGainNode);
+
+    // Cue (Headphone) routing
+    this.cueBusGainNode = this.context.createGain();
+    this.cueDestination = this.context.createMediaStreamDestination();
+    this.cueBusGainNode.connect(this.cueDestination);
+
+    this.cueAudioElement = new Audio();
+    this.cueAudioElement.srcObject = this.cueDestination.stream;
+    this.cueAudioElement.play().catch(e => console.warn("Cue audio autoplay prevented", e));
+
+    this.deckA = new Deck('A', this.masterGainNode, this.cueBusGainNode);
+    this.deckB = new Deck('B', this.masterGainNode, this.cueBusGainNode);
   }
 
   public static getInstance(): AudioEngine {
@@ -522,6 +565,22 @@ export class AudioEngine {
     }
     if (this.deckB) {
       this.deckB.setCrossfadeGain(gainB);
+    }
+  }
+
+  public setHeadphoneVolume(vol: number): void {
+    if (this.cueBusGainNode) {
+      this.cueBusGainNode.gain.value = vol;
+    }
+  }
+
+  public async setHeadphoneDevice(deviceId: string): Promise<void> {
+    if (this.cueAudioElement && 'setSinkId' in this.cueAudioElement) {
+      try {
+        await (this.cueAudioElement as any).setSinkId(deviceId);
+      } catch (err) {
+        console.error("Failed to set headphone audio device", err);
+      }
     }
   }
 }

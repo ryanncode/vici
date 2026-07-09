@@ -8,12 +8,14 @@ export interface LibraryState {
   sessionStarted: boolean;
   activeSessionTrackIds: string[];
   sessionHandles: Record<string, { fileHandle?: FileSystemFileHandle; rawFile?: File }>;
+  playedTrackIds: string[];
 
   setActiveTab: (tab: 'tracks' | 'playlists') => void;
   setLibrary: (tracks: Track[]) => void;
   setSessionStarted: (started: boolean) => void;
   setActiveSessionTrackIds: (ids: string[] | ((prev: string[]) => string[])) => void;
   setSessionHandles: (handles: Record<string, { fileHandle?: FileSystemFileHandle; rawFile?: File }> | ((prev: Record<string, { fileHandle?: FileSystemFileHandle; rawFile?: File }>) => Record<string, { fileHandle?: FileSystemFileHandle; rawFile?: File }>)) => void;
+  markTrackPlayed: (id: string) => void;
   clearSession: () => void;
 }
 
@@ -23,6 +25,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   sessionStarted: false,
   activeSessionTrackIds: [],
   sessionHandles: {},
+  playedTrackIds: [],
 
   setActiveTab: (tab) => set({ activeTab: tab }),
   setLibrary: (library) => set({ library }),
@@ -36,9 +39,14 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     sessionHandles: typeof handles === 'function' ? handles(state.sessionHandles) : handles
   })),
 
+  markTrackPlayed: (id) => set((state) => ({
+    playedTrackIds: state.playedTrackIds.includes(id) ? state.playedTrackIds : [...state.playedTrackIds, id]
+  })),
+
   clearSession: () => set({
     sessionStarted: false,
     activeSessionTrackIds: [],
-    sessionHandles: {}
+    sessionHandles: {},
+    playedTrackIds: []
   })
 }));
