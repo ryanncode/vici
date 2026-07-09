@@ -96,7 +96,7 @@ export const RotaryKnob = ({
   };
 
   return (
-    <div className={`flex flex-col items-center relative group ${hideLabel ? '' : 'gap-1 my-[3px]'}`}>
+    <div className={`flex flex-col items-center relative group ${hideLabel ? '' : 'my-0'}`}>
       <div 
         className={`${dims} rounded-full border-2 ${colorMap[color]} shadow-md relative flex items-center justify-center cursor-ns-resize overflow-hidden touch-none`}
         onDoubleClick={onDoubleClick}
@@ -370,15 +370,15 @@ export const CenterMixer: React.FC = () => {
           <RotaryKnob label="Filter" size="sm" color="blue" min={-100} max={100} step={1} value={deckA.filter} onChange={(v) => handleFilterChange('A', v)} onDoubleClick={() => handleFilterChange('A', 0)} />
           
           {/* Fader & VU Block */}
-          <div className="flex flex-col items-center gap-1 mt-1">
+          <div className="flex flex-col items-center">
             <button 
               onClick={() => handleCueToggle('A')}
-              className={`w-12 h-6 rounded flex items-center justify-center border transition-colors shadow-sm ${deckA.isCue ? 'bg-orange-500 text-white border-orange-400' : 'bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-700 hover:bg-slate-300 dark:hover:bg-slate-700'}`}
+              className={`w-12 h-5 rounded flex items-center justify-center border transition-colors shadow-sm ${deckA.isCue ? 'bg-orange-500 text-white border-orange-400' : 'bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-700 hover:bg-slate-300 dark:hover:bg-slate-700'}`}
               title="Headphone Cue"
             >
-              <Headphones size={14} />
+              <Headphones size={13} />
             </button>
-            <div className="flex items-center gap-2 h-[90px]">
+            <div className="flex items-center gap-2 h-[70px]">
               <VUMeter deckId="A" />
               <div className="h-full w-6 bg-slate-100 dark:bg-slate-950 rounded-lg flex justify-center py-1 border border-slate-300 dark:border-slate-900 shadow-inner relative touch-none" onPointerDown={(e) => handleFaderPointerDown(e, 'A', deckA.volume)} onWheel={(e) => handleFaderWheel(e, 'A', deckA.volume)} onDoubleClick={() => handleVolumeChange('A', 1.0)}>
                 <input 
@@ -416,15 +416,15 @@ export const CenterMixer: React.FC = () => {
           <RotaryKnob label="Filter" size="sm" color="amber" min={-100} max={100} step={1} value={deckB.filter} onChange={(v) => handleFilterChange('B', v)} onDoubleClick={() => handleFilterChange('B', 0)} />
           
           {/* Fader & VU Block */}
-          <div className="flex flex-col items-center gap-1 mt-1">
+          <div className="flex flex-col items-center">
             <button 
               onClick={() => handleCueToggle('B')}
-              className={`w-12 h-6 rounded flex items-center justify-center border transition-colors shadow-sm ${deckB.isCue ? 'bg-orange-500 text-white border-orange-400' : 'bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-700 hover:bg-slate-300 dark:hover:bg-slate-700'}`}
+              className={`w-12 h-5 rounded flex items-center justify-center border transition-colors shadow-sm ${deckB.isCue ? 'bg-orange-500 text-white border-orange-400' : 'bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-700 hover:bg-slate-300 dark:hover:bg-slate-700'}`}
               title="Headphone Cue"
             >
-              <Headphones size={14} />
+              <Headphones size={13} />
             </button>
-            <div className="flex items-center gap-2 h-[90px]">
+            <div className="flex items-center gap-2 h-[70px]">
               <VUMeter deckId="B" />
               <div className="h-full w-6 bg-slate-100 dark:bg-slate-950 rounded-lg flex justify-center py-1 border border-slate-300 dark:border-slate-900 shadow-inner relative touch-none" onPointerDown={(e) => handleFaderPointerDown(e, 'B', deckB.volume)} onWheel={(e) => handleFaderWheel(e, 'B', deckB.volume)} onDoubleClick={() => handleVolumeChange('B', 1.0)}>
                 <input 
