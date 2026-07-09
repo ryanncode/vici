@@ -492,10 +492,16 @@ export class AudioEngine {
     document.body.appendChild(this.cueAudioElement);
 
     // Restore saved headphone device and volume
-    const savedDevice = localStorage.getItem('vici_cue_device');
-    if (savedDevice && 'setSinkId' in this.cueAudioElement) {
-      (this.cueAudioElement as any).setSinkId(savedDevice === 'default' ? '' : savedDevice).catch(() => {});
+    const savedDevice = localStorage.getItem('vici_cue_device') || '';
+    if (savedDevice === 'default' || savedDevice === '') {
+      this.cueBusGainNode.disconnect();
+      this.cueBusGainNode.connect(this.context.destination);
+    } else {
+      if ('setSinkId' in this.cueAudioElement) {
+        (this.cueAudioElement as any).setSinkId(savedDevice).catch(() => {});
+      }
     }
+
     const savedVol = localStorage.getItem('vici_cue_volume');
     if (savedVol) {
       this.cueBusGainNode.gain.value = parseFloat(savedVol);
@@ -599,17 +605,25 @@ export class AudioEngine {
   }
 
   public async setHeadphoneDevice(deviceId: string): Promise<void> {
-    if (this.cueAudioElement) {
-      if ('setSinkId' in this.cueAudioElement) {
-        try {
-          // If 'default', it might need to be empty string in some implementations
-          await (this.cueAudioElement as any).setSinkId(deviceId === 'default' ? '' : deviceId);
-        } catch (err) {
-          console.error("Failed to set headphone audio device", err);
+    try {
+      this.cueBusGainNode.disconnect();
+    } catch (e) {}
+
+    if (deviceId === 'default' || deviceId === '') {
+      this.cueBusGainNode.connect(this.context.destination);
+    } else {
+      this.cueBusGainNode.connect(this.cueDestination);
+      if (this.cueAudioElement) {
+        if ('setSinkId' in this.cueAudioElement) {
+          try {
+            await (this.cueAudioElement as any).setSinkId(deviceId);
+          } catch (err) {
+            console.error("Failed to set headphone audio device", err);
+          }
         }
-      }
-      if (this.cueAudioElement.paused) {
-        this.cueAudioElement.play().catch(e => console.warn("Cue play prevented", e));
+        if (this.cueAudioElement.paused) {
+          this.cueAudioElement.play().catch(e => console.warn("Cue play prevented", e));
+        }
       }
     }
   }
