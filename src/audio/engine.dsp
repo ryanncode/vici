@@ -8,9 +8,9 @@ denormal_dc = 1e-15;
 pitch_rate = hslider("pitch", 1.0, 0.5, 2.0, 0.001);
 
 // 3-Band EQ (Gain in dB)
-low_gain  = hslider("eq_low", 0.0, -24.0, 6.0, 0.1) : si.smoo;
-mid_gain  = hslider("eq_mid", 0.0, -24.0, 6.0, 0.1) : si.smoo;
-high_gain = hslider("eq_high", 0.0, -24.0, 6.0, 0.1) : si.smoo;
+low_gain  = hslider("eq_low", 0.0, -24.0, 6.0, 0.1);
+mid_gain  = hslider("eq_mid", 0.0, -24.0, 6.0, 0.1);
+high_gain = hslider("eq_high", 0.0, -24.0, 6.0, 0.1);
 
 // Master Volume
 volume = hslider("volume", 1.0, 0.0, 1.5, 0.01) : si.smoo;
@@ -68,9 +68,9 @@ fx_noise_sweep = hslider("fx_noise_sweep", 0.5, 0.0, 1.0, 0.01) : si.smoo;
 // EQ
 eq(l, r) = l_eq, r_eq
 with {
-    low_lin = ba.db2linear(low_gain);
-    mid_lin = ba.db2linear(mid_gain);
-    high_lin = ba.db2linear(high_gain);
+    low_lin = ba.db2linear(low_gain) : si.smoo;
+    mid_lin = ba.db2linear(mid_gain) : si.smoo;
+    high_lin = ba.db2linear(high_gain) : si.smoo;
 
     // Linkwitz-Riley 4th order (24dB/oct) crossover building blocks
     lp4(f) = fi.lowpass(2, f) : fi.lowpass(2, f);
