@@ -378,7 +378,7 @@ export const CenterMixer: React.FC = () => {
             >
               <Headphones size={13} />
             </button>
-            <div className="flex items-center gap-2 h-[70px]">
+            <div className="flex items-center gap-2 h-[90px]">
               <VUMeter deckId="A" />
               <div className="h-full w-6 bg-slate-100 dark:bg-slate-950 rounded-lg flex justify-center py-1 border border-slate-300 dark:border-slate-900 shadow-inner relative touch-none" onPointerDown={(e) => handleFaderPointerDown(e, 'A', deckA.volume)} onWheel={(e) => handleFaderWheel(e, 'A', deckA.volume)} onDoubleClick={() => handleVolumeChange('A', 1.0)}>
                 <input 
@@ -424,7 +424,7 @@ export const CenterMixer: React.FC = () => {
             >
               <Headphones size={13} />
             </button>
-            <div className="flex items-center gap-2 h-[70px]">
+            <div className="flex items-center gap-2 h-[90px]">
               <VUMeter deckId="B" />
               <div className="h-full w-6 bg-slate-100 dark:bg-slate-950 rounded-lg flex justify-center py-1 border border-slate-300 dark:border-slate-900 shadow-inner relative touch-none" onPointerDown={(e) => handleFaderPointerDown(e, 'B', deckB.volume)} onWheel={(e) => handleFaderWheel(e, 'B', deckB.volume)} onDoubleClick={() => handleVolumeChange('B', 1.0)}>
                 <input 
