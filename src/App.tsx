@@ -247,7 +247,7 @@ export default function App() {
           
           {/* Left Section (200px) */}
           <div className="w-[200px] flex items-center gap-3">
-            <span className="font-black tracking-widest text-slate-900 dark:text-white italic text-lg">VICI</span>
+            <a href="https://woundup.here/vici" target="_blank" rel="noopener noreferrer" className="font-black tracking-widest text-slate-900 dark:text-white italic text-lg hover:text-slate-600 dark:hover:text-slate-300 transition-colors">VICI</a>
             <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-950 px-2 py-1 rounded border border-slate-300 dark:border-slate-800">
               <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></div>
               <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 uppercase tracking-wider">CPU</span>
