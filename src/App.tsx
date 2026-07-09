@@ -388,7 +388,7 @@ export default function App() {
 
         {/* Stacked Waveforms (Always visible on mobile) */}
         <div className="shrink-0 w-full overflow-hidden flex justify-center bg-slate-100 dark:bg-slate-950">
-          <div style={{ zoom: scale }}>
+          <div style={{ zoom: scale, width: '1050px' }}>
             <StackedWaveforms />
           </div>
         </div>
