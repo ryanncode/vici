@@ -278,7 +278,7 @@ export const Browser = React.memo(function Browser() {
                 onDragStart={(e) => onDragStart(e, idx)}
                 onDragEnter={(e) => onDragEnterItem(e, idx)}
                 onDragEnd={onDragEnd}
-                className={`grid grid-cols-[1fr_1fr_60px_60px_60px_60px_100px] gap-4 px-4 py-2 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 rounded-md items-center group transition cursor-pointer ${draggedIdx === idx ? 'opacity-50' : ''}`}
+                className={`grid grid-cols-[1fr_1fr_60px_60px_60px_60px_100px] gap-4 px-4 py-2 even:bg-black/[0.02] dark:even:bg-white/[0.02] hover:bg-slate-200/50 dark:hover:bg-slate-800/50 rounded-md items-center group transition cursor-pointer ${draggedIdx === idx ? 'opacity-50' : ''}`}
               >
                 <div className="font-medium text-sm text-slate-800 dark:text-slate-200 truncate flex items-center gap-2">
                   <div className="w-4 text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300 cursor-grab">≡</div>

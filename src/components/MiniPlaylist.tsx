@@ -212,7 +212,7 @@ export const MiniPlaylist: React.FC<MiniPlaylistProps> = ({ onExpandLibrary }) =
               onDragEnter={(e) => onDragEnterItem(e, idx)}
               onDragEnd={onDragEnd}
               onDoubleClick={() => handleDoubleClick(track)} 
-              className={`flex items-center px-2 py-0.5 bg-transparent hover:bg-slate-200/50 dark:hover:bg-slate-800/50 rounded-sm group transition-colors cursor-pointer ${draggedIdx === idx ? 'opacity-50' : ''}`}
+              className={`flex items-center px-2 py-0.5 even:bg-black/[0.02] dark:even:bg-white/[0.02] hover:bg-slate-200/50 dark:hover:bg-slate-800/50 rounded-sm group transition-colors cursor-pointer ${draggedIdx === idx ? 'opacity-50' : ''}`}
             >
               
               {/* Drag Handle */}
