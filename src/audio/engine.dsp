@@ -54,10 +54,10 @@ fx_siren_lfo_depth = hslider("fx_siren_lfo_depth", 500.0, 0.0, 2000.0, 1.0) : si
 
 // Compressor (Macro Dynamics)
 fx_compressor_on = hslider("fx_compressor_on", 0, 0, 1, 1) : si.smoo;
-fx_compressor_ratio = hslider("fx_compressor_ratio", 2.0, 1.0, 20.0, 0.1) : si.smoo;
-fx_compressor_thresh = hslider("fx_compressor_thresh", -12.0, -60.0, 0.0, 0.1) : si.smoo;
-fx_compressor_attack = hslider("fx_compressor_attack", 0.01, 0.001, 1.0, 0.001) : si.smoo;
-fx_compressor_release = hslider("fx_compressor_release", 0.1, 0.01, 2.0, 0.01) : si.smoo;
+fx_compressor_ratio = hslider("fx_compressor_ratio", 2.0, 1.0, 20.0, 0.1);
+fx_compressor_thresh = hslider("fx_compressor_thresh", -12.0, -60.0, 0.0, 0.1);
+fx_compressor_attack = hslider("fx_compressor_attack", 0.01, 0.001, 1.0, 0.001);
+fx_compressor_release = hslider("fx_compressor_release", 0.1, 0.01, 2.0, 0.01);
 
 // Noise Sweep
 fx_noise_on = hslider("fx_noise_on", 0, 0, 1, 1) : si.smoo;
