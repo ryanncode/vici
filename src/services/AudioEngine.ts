@@ -31,7 +31,6 @@ export class Deck {
   // Web Audio Nodes
   private trackNode: AudioWorkletNode | null = null;
   private faustNode: any | null = null;
-  private outputNode: AudioNode;
 
   public get duration(): number {
     return this._duration;
