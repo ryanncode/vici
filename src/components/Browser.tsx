@@ -22,6 +22,7 @@ export const Browser = React.memo(function Browser() {
     handleLoadDirectory, 
     clearCache,
     fallbackDirInputRef,
+    fileInputRef,
     handleFallbackFiles,
     processDropItems,
     isImporting,
@@ -175,10 +176,21 @@ export const Browser = React.memo(function Browser() {
     <div className="flex-1 flex bg-slate-100 dark:bg-slate-900 min-h-0">
       {/* @ts-expect-error directory attribute is non-standard but heavily supported */}
       <input type="file" ref={fallbackDirInputRef} style={{ display: 'none' }} multiple webkitdirectory="true" directory="true" onChange={handleFallbackFiles} />
+      <input type="file" ref={fileInputRef} style={{ display: 'none' }} multiple accept="audio/*,.m3u,.m3u8" onChange={handleFallbackFiles} />
       
       <div className="w-64 border-r border-slate-300 dark:border-slate-800 flex flex-col bg-slate-50/50 dark:bg-slate-950/50">
         <div className="p-4 border-b border-slate-300 dark:border-slate-800">
           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Crates</div>
+          <div className="flex gap-2 mb-4">
+             <button onClick={handleLoadDirectory} className="flex-1 px-2 py-1.5 bg-blue-600 hover:bg-blue-500 text-white shadow-sm shadow-blue-500/20 rounded text-[10px] font-medium flex justify-center items-center gap-1 transition">
+               <FolderSearch size={12} /> Load Folder
+             </button>
+             { 'showDirectoryPicker' in window && (
+               <button onClick={() => fileInputRef.current?.click()} className="flex-1 px-2 py-1.5 bg-blue-600 hover:bg-blue-500 text-white shadow-sm shadow-blue-500/20 rounded text-[10px] font-medium flex justify-center items-center gap-1 transition">
+                 <ListMusic size={12} /> Load Playlist
+               </button>
+             )}
+          </div>
           <div className="flex flex-col gap-1">
             {crates.length === 0 ? (
               <div className="text-xs text-slate-500 p-2 text-center border border-dashed border-slate-300 dark:border-slate-700 rounded">
@@ -228,12 +240,6 @@ export const Browser = React.memo(function Browser() {
       </div>
 
       <div className="flex-1 overflow-auto bg-slate-50/80 dark:bg-slate-900/80 p-2 sm:p-4 flex flex-col">
-        <div className="flex justify-start gap-3 mb-3">
-          <button onClick={handleLoadDirectory} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white shadow-sm shadow-blue-500/20 rounded text-xs font-medium flex justify-center items-center gap-2 transition">
-            <FolderSearch size={14} /> Load Folder
-          </button>
-        </div>
-
         <div className="p-4" onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop}>
           <div className={`p-4 border-2 border-dashed rounded-lg text-center transition border-slate-300 dark:border-slate-800 ${isImporting ? 'bg-blue-100/50 dark:bg-blue-900/30 border-blue-500/50' : 'bg-slate-200/50 dark:bg-slate-900/50'}`}>
             {isImporting ? (

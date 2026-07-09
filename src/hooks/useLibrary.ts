@@ -11,6 +11,7 @@ export function useLibrary() {
   const store = useLibraryStore();
   
   const fallbackDirInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
 
@@ -118,11 +119,19 @@ export function useLibrary() {
       setImportProgress(Math.round((current / filesToProcess.length) * 100));
     }
 
-    await db.playlists.put({
-      id: playlistId,
-      name: playlistName,
-      trackIds: newIds
-    });
+    let playlistId = `playlist-${Date.now()}`;
+    const existing = await db.playlists.where('name').equals(playlistName).first();
+    if (existing) {
+      playlistId = existing.id;
+      existing.trackIds = Array.from(new Set([...existing.trackIds, ...newIds]));
+      await db.playlists.put(existing);
+    } else {
+      await db.playlists.put({
+        id: playlistId,
+        name: playlistName,
+        trackIds: newIds
+      });
+    }
 
     setActiveCrateId(playlistId);
     store.setSessionHandles(prev => ({ ...prev, ...newHandles }));
@@ -177,11 +186,19 @@ export function useLibrary() {
           
           const playlistName = handles[0].name.split('/')[0] || `Folder ${new Date().toLocaleDateString()}`;
           const playlistId = `playlist-${Date.now()}`;
-          await db.playlists.put({
-            id: playlistId,
-            name: playlistName,
-            trackIds: newIds
-          });
+          let playlistId = `playlist-${Date.now()}`;
+          const existing = await db.playlists.where('name').equals(playlistName).first();
+          if (existing) {
+             playlistId = existing.id;
+             existing.trackIds = Array.from(new Set([...existing.trackIds, ...newIds]));
+             await db.playlists.put(existing);
+          } else {
+             await db.playlists.put({
+               id: playlistId,
+               name: playlistName,
+               trackIds: newIds
+             });
+          }
           
           setActiveCrateId(playlistId);
           store.setSessionHandles(prev => ({ ...prev, ...newHandles }));
@@ -252,11 +269,19 @@ export function useLibrary() {
 
     const playlistName = `Folder ${new Date().toLocaleDateString()}`;
     const playlistId = `playlist-${Date.now()}`;
-    await db.playlists.put({
-      id: playlistId,
-      name: playlistName,
-      trackIds: newIds
-    });
+    let playlistId = `playlist-${Date.now()}`;
+    const existing = await db.playlists.where('name').equals(playlistName).first();
+    if (existing) {
+      playlistId = existing.id;
+      existing.trackIds = Array.from(new Set([...existing.trackIds, ...newIds]));
+      await db.playlists.put(existing);
+    } else {
+      await db.playlists.put({
+        id: playlistId,
+        name: playlistName,
+        trackIds: newIds
+      });
+    }
 
     setActiveCrateId(playlistId);
     store.setSessionHandles(prev => ({ ...prev, ...newHandles }));
@@ -283,8 +308,11 @@ export function useLibrary() {
         await db.playlists.clear();
         await OPFSManager.clearAll();
         store.clearSession();
-        // Force refresh for UI
+        setActiveCrateId(null);
         window.dispatchEvent(new Event('storage-updated'));
+        
+        // Force reload to completely clear IndexedDB connections and memory state
+        window.location.reload();
       } catch (e) {
         console.error("Failed to clear cache", e);
       }
@@ -299,6 +327,7 @@ export function useLibrary() {
     handleLoadDirectory,
     clearCache,
     fallbackDirInputRef,
+    fileInputRef,
     handleFallbackFiles,
     processDropItems,
     isImporting,
