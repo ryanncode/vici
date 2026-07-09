@@ -47,8 +47,11 @@ export default function App() {
       if (typeof window !== 'undefined') {
         const winW = window.innerWidth;
         const winH = window.innerHeight;
-        // Don't scale up on mobile views (<768px width)
-        if (winW < 768) return;
+        // On mobile, calculate a pure width-based scale for the waveforms
+        if (winW < 768) {
+          setScale(winW / 1050);
+          return;
+        }
         
         // Add a little padding (e.g., 20px) so it doesn't touch the absolute edges
         const scaleX = (winW - 20) / 1050;
@@ -119,6 +122,7 @@ export default function App() {
   const deckBControl = useDeckControl('B');
   
   const [activeView, setActiveView] = useState<'mixer' | 'library' | 'hotkeys'>('mixer');
+  const [mobileActiveTab, setMobileActiveTab] = useState<'deckA' | 'mixer' | 'deckB' | 'library'>('mixer');
   const [isMidiLearnActive, setIsMidiLearnActive] = useState(false);
 
   const getNextTrack = (currentTrackId?: string): Track | null => {
@@ -361,15 +365,61 @@ export default function App() {
 
       </div>
 
-      {/* Mobile/Tablet Placeholder View (< 768px) */}
-      <div className="md:hidden flex flex-col items-center justify-center w-full h-full bg-slate-900 text-slate-400 p-8 text-center">
-        <div className="w-16 h-16 mb-6 rounded-full bg-slate-800 flex items-center justify-center shadow-inner border border-slate-700">
-          <span className="text-2xl">📱</span>
+      {/* Mobile View (< 768px) */}
+      <div className="md:hidden flex flex-col w-full h-full bg-slate-200 dark:bg-slate-900 text-slate-800 dark:text-slate-200 overflow-hidden">
+        {/* Mobile Header */}
+        <div className="h-[40px] shrink-0 bg-white/50 dark:bg-slate-800/50 backdrop-blur border-b border-slate-300 dark:border-slate-700 flex items-center justify-between px-3">
+          <span className="font-black tracking-widest text-slate-900 dark:text-white italic text-sm">VICI</span>
+          
+          <div className="flex items-center gap-2">
+             <button 
+                onClick={() => useMixerStore.getState().setIsAutomixEnabled(!isAutomixEnabled)}
+                className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded border ${
+                  isAutomixEnabled ? 'bg-blue-600 text-white border-blue-500' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700'
+                }`}
+              >
+                Auto-Mix
+              </button>
+              <button onClick={() => setIsDarkMode(!isDarkMode)} className="w-6 h-6 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center justify-center border border-slate-300 dark:border-slate-700">
+                {isDarkMode ? '☀' : '🌙'}
+              </button>
+          </div>
         </div>
-        <h2 className="text-xl font-bold text-white mb-2 tracking-widest uppercase">Mobile View Pending</h2>
-        <p className="text-sm max-w-sm">
-          The specialized touch-first portrait and landscape interfaces for tablets and phones are currently in development. Please view on a desktop or larger screen.
-        </p>
+
+        {/* Stacked Waveforms (Always visible on mobile) */}
+        <div className="shrink-0 w-full overflow-hidden flex justify-center bg-slate-100 dark:bg-slate-950">
+          <div style={{ zoom: scale }}>
+            <StackedWaveforms />
+          </div>
+        </div>
+
+        {/* Swipeable / Tab Content Area */}
+        <div className="flex-1 flex flex-col relative overflow-y-auto overflow-x-hidden p-2 items-center">
+           {mobileActiveTab === 'deckA' && <DeckColumn deckId="A" />}
+           {mobileActiveTab === 'mixer' && <CenterMixer />}
+           {mobileActiveTab === 'deckB' && <DeckColumn deckId="B" />}
+           {mobileActiveTab === 'library' && <div className="w-full h-full flex"><Browser /></div>}
+        </div>
+
+        {/* Mobile Navigation Dock */}
+        <div className="h-[60px] shrink-0 bg-white dark:bg-slate-950 border-t border-slate-300 dark:border-slate-800 flex items-center justify-around px-2 pb-2 pt-1 shadow-[0_-4px_10px_rgba(0,0,0,0.1)] dark:shadow-[0_-4px_10px_rgba(0,0,0,0.3)] z-10">
+          <button onClick={() => setMobileActiveTab('deckA')} className={`flex flex-col items-center justify-center w-1/4 h-full transition-colors ${mobileActiveTab === 'deckA' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400'}`}>
+            <span className="text-lg">🅰️</span>
+            <span className="text-[9px] uppercase font-bold tracking-wider mt-1">Deck A</span>
+          </button>
+          <button onClick={() => setMobileActiveTab('mixer')} className={`flex flex-col items-center justify-center w-1/4 h-full transition-colors ${mobileActiveTab === 'mixer' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400'}`}>
+            <span className="text-lg">🎛️</span>
+            <span className="text-[9px] uppercase font-bold tracking-wider mt-1">Mixer</span>
+          </button>
+          <button onClick={() => setMobileActiveTab('deckB')} className={`flex flex-col items-center justify-center w-1/4 h-full transition-colors ${mobileActiveTab === 'deckB' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400'}`}>
+            <span className="text-lg">🅱️</span>
+            <span className="text-[9px] uppercase font-bold tracking-wider mt-1">Deck B</span>
+          </button>
+          <button onClick={() => setMobileActiveTab('library')} className={`flex flex-col items-center justify-center w-1/4 h-full transition-colors ${mobileActiveTab === 'library' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400'}`}>
+            <span className="text-lg">📁</span>
+            <span className="text-[9px] uppercase font-bold tracking-wider mt-1">Library</span>
+          </button>
+        </div>
       </div>
 
     </div>
