@@ -104,8 +104,17 @@ export class Deck {
       this.faustNode.setParamValue('/engine/fx_phaser_on', 0);
       this.faustNode.setParamValue('/engine/fx_gate_on', 0);
       this.faustNode.setParamValue('/engine/fx_roll_on', 0);
+      this.faustNode.setParamValue('/engine/fx_roll_beats', 1.0);
       this.faustNode.setParamValue('/engine/fx_siren_on', 0);
+      this.faustNode.setParamValue('/engine/fx_siren_type', 1);
+      this.faustNode.setParamValue('/engine/fx_siren_freq', 300.0);
+      this.faustNode.setParamValue('/engine/fx_siren_lfo_rate', 2.0);
+      this.faustNode.setParamValue('/engine/fx_siren_lfo_depth', 500.0);
       this.faustNode.setParamValue('/engine/fx_compressor_on', 0);
+      this.faustNode.setParamValue('/engine/fx_compressor_ratio', 2.0);
+      this.faustNode.setParamValue('/engine/fx_compressor_thresh', -12.0);
+      this.faustNode.setParamValue('/engine/fx_compressor_attack', 0.01);
+      this.faustNode.setParamValue('/engine/fx_compressor_release', 0.1);
 
       // 3. Connect Graph: Track -> Faust -> Output
       if (this.faustNode) {
@@ -335,6 +344,33 @@ export class Deck {
   }
   public setCompressorState(isOn: boolean): void {
     if (this.faustNode) this.faustNode.setParamValue('/engine/fx_compressor_on', isOn ? 1 : 0);
+  }
+  public setRollBeats(beats: number): void {
+    if (this.faustNode) this.faustNode.setParamValue('/engine/fx_roll_beats', beats);
+  }
+  public setSirenType(type: number): void {
+    if (this.faustNode) this.faustNode.setParamValue('/engine/fx_siren_type', type);
+  }
+  public setSirenFreq(freq: number): void {
+    if (this.faustNode) this.faustNode.setParamValue('/engine/fx_siren_freq', freq);
+  }
+  public setSirenLfoRate(rate: number): void {
+    if (this.faustNode) this.faustNode.setParamValue('/engine/fx_siren_lfo_rate', rate);
+  }
+  public setSirenLfoDepth(depth: number): void {
+    if (this.faustNode) this.faustNode.setParamValue('/engine/fx_siren_lfo_depth', depth);
+  }
+  public setCompressorRatio(ratio: number): void {
+    if (this.faustNode) this.faustNode.setParamValue('/engine/fx_compressor_ratio', ratio);
+  }
+  public setCompressorThresh(thresh: number): void {
+    if (this.faustNode) this.faustNode.setParamValue('/engine/fx_compressor_thresh', thresh);
+  }
+  public setCompressorAttack(attack: number): void {
+    if (this.faustNode) this.faustNode.setParamValue('/engine/fx_compressor_attack', attack);
+  }
+  public setCompressorRelease(release: number): void {
+    if (this.faustNode) this.faustNode.setParamValue('/engine/fx_compressor_release', release);
   }
   public setRoll(isActive: boolean, _rate: number = 8): void {
     if (this.faustNode) {

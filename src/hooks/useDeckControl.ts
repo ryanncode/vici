@@ -365,7 +365,7 @@ export function useDeckControl(deckId: 'A' | 'B') {
     }
   };
 
-  const handleFxParamChange = (fxType: 'delay' | 'reverb' | 'phaser', param: 'time' | 'feedback' | 'size' | 'decay' | 'predelay' | 'color' | 'rate', value: number) => {
+  const handleFxParamChange = (fxType: 'delay' | 'reverb' | 'phaser' | 'gate' | 'roll' | 'siren' | 'compressor', param: 'time' | 'feedback' | 'size' | 'decay' | 'predelay' | 'color' | 'rate' | 'beats' | 'type' | 'freq' | 'lfoRate' | 'lfoDepth' | 'ratio' | 'thresh' | 'attack' | 'release', value: number) => {
     const engine = AudioEngine.getInstance();
     const deckEngine = deckId === 'A' ? engine.deckA : engine.deckB;
     const store = useMixerStore.getState();
@@ -395,6 +395,37 @@ export function useDeckControl(deckId: 'A' | 'B') {
     } else if (fxType === 'phaser' && param === 'rate') {
       store.setDeckFx(deckId, { phaserRate: value });
       throttledDSP(`fx-${deckId}-phaseRate`, () => deckEngine.setPhaserRate(value));
+    } else if (fxType === 'roll' && param === 'beats') {
+      store.setDeckFx(deckId, { rollBeats: value });
+      throttledDSP(`fx-${deckId}-rollBeats`, () => deckEngine.setRollBeats(value));
+    } else if (fxType === 'siren') {
+      if (param === 'type') {
+        store.setDeckFx(deckId, { sirenType: value });
+        throttledDSP(`fx-${deckId}-sirenType`, () => deckEngine.setSirenType(value));
+      } else if (param === 'freq') {
+        store.setDeckFx(deckId, { sirenFreq: value });
+        throttledDSP(`fx-${deckId}-sirenFreq`, () => deckEngine.setSirenFreq(value));
+      } else if (param === 'lfoRate') {
+        store.setDeckFx(deckId, { sirenLfoRate: value });
+        throttledDSP(`fx-${deckId}-sirenLfoRate`, () => deckEngine.setSirenLfoRate(value));
+      } else if (param === 'lfoDepth') {
+        store.setDeckFx(deckId, { sirenLfoDepth: value });
+        throttledDSP(`fx-${deckId}-sirenLfoDepth`, () => deckEngine.setSirenLfoDepth(value));
+      }
+    } else if (fxType === 'compressor') {
+      if (param === 'ratio') {
+        store.setDeckFx(deckId, { compressorRatio: value });
+        throttledDSP(`fx-${deckId}-compRatio`, () => deckEngine.setCompressorRatio(value));
+      } else if (param === 'thresh') {
+        store.setDeckFx(deckId, { compressorThresh: value });
+        throttledDSP(`fx-${deckId}-compThresh`, () => deckEngine.setCompressorThresh(value));
+      } else if (param === 'attack') {
+        store.setDeckFx(deckId, { compressorAttack: value });
+        throttledDSP(`fx-${deckId}-compAttack`, () => deckEngine.setCompressorAttack(value));
+      } else if (param === 'release') {
+        store.setDeckFx(deckId, { compressorRelease: value });
+        throttledDSP(`fx-${deckId}-compRelease`, () => deckEngine.setCompressorRelease(value));
+      }
     }
   };
 

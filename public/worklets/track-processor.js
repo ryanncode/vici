@@ -330,12 +330,16 @@ class TrackProcessor extends AudioWorkletProcessor {
       for (let i = 0; i < outputFrames; i++) {
         if (channelCount > 0) {
           let val = this.outputHeap[i * 2];
-          if (val !== val || val > 10.0 || val < -10.0) val = 0;
+          if (val !== val) val = 0;
+          else if (val > 1.0) val = 1.0;
+          else if (val < -1.0) val = -1.0;
           output[0][i] = val;
         }
         if (channelCount > 1) {
           let val = this.outputHeap[i * 2 + 1];
-          if (val !== val || val > 10.0 || val < -10.0) val = 0;
+          if (val !== val) val = 0;
+          else if (val > 1.0) val = 1.0;
+          else if (val < -1.0) val = -1.0;
           output[1][i] = val;
         }
       }

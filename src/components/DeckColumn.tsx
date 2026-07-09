@@ -197,8 +197,12 @@ export const DeckColumn: React.FC<DeckColumnProps> = ({ deckId }) => {
             +
           </button>
           
+          <div className="text-[9px] font-mono font-bold text-slate-500 my-0.5">
+            {state.pitch === 1.0 ? "0.00%" : `${((state.pitch - 1.0) * 100).toFixed(2)}%`}
+          </div>
+          
           {/* Pitch Slider */}
-          <div className="flex-1 w-10 my-1 bg-slate-100 dark:bg-slate-900 rounded-md border border-slate-300 dark:border-slate-700 relative flex justify-center py-2 shadow-inner overflow-hidden touch-none" onPointerDown={handlePitchPointerDown} onWheel={handlePitchWheel} onDoubleClick={() => setPitch(1.0)}>
+          <div className="flex-1 w-10 mb-1 bg-slate-100 dark:bg-slate-900 rounded-md border border-slate-300 dark:border-slate-700 relative flex justify-center py-2 shadow-inner overflow-hidden touch-none" onPointerDown={handlePitchPointerDown} onWheel={handlePitchWheel} onDoubleClick={() => setPitch(1.0)}>
             <input type="range" min="0.84" max="1.16" step="any" value={state.pitch} className="absolute inset-0 w-full h-full opacity-0 pointer-events-none" />
             <div className="w-0.5 bg-slate-400 dark:bg-black h-full rounded-full"></div>
             {/* Center zero line */}
@@ -306,48 +310,52 @@ export const DeckColumn: React.FC<DeckColumnProps> = ({ deckId }) => {
                        <RotaryKnob 
                           label="P1" hideLabel={true}
                           size="xs" 
-                          min={fxType === 'phaser' ? 0.1 : 0} 
-                          max={fxType === 'phaser' ? 10.0 : fxType === 'delay' ? 2 : 1} 
-                          step={0.01} 
-                          value={fxType === 'delay' ? state.fx.delayTime : fxType === 'reverb' ? state.fx.reverbSize : fxType === 'phaser' ? state.fx.phaserRate : 0.5} 
-                          onChange={(v) => handleFxParamChange(fxType as 'delay' | 'reverb' | 'phaser', fxType === 'delay' ? 'time' : fxType === 'reverb' ? 'size' : 'rate', v)}
+                          min={fxType === 'phaser' ? 0.1 : fxType === 'roll' ? 0.0625 : fxType === 'siren' ? 0 : fxType === 'compressor' ? 1.0 : 0} 
+                          max={fxType === 'phaser' ? 10.0 : fxType === 'delay' ? 2 : fxType === 'roll' ? 4.0 : fxType === 'siren' ? 3 : fxType === 'compressor' ? 20.0 : 1} 
+                          step={fxType === 'siren' ? 1 : fxType === 'roll' ? 0.0625 : 0.01} 
+                          value={fxType === 'delay' ? state.fx.delayTime : fxType === 'reverb' ? state.fx.reverbSize : fxType === 'phaser' ? state.fx.phaserRate : fxType === 'roll' ? state.fx.rollBeats : fxType === 'siren' ? state.fx.sirenType : fxType === 'compressor' ? state.fx.compressorRatio : 0.5} 
+                          onChange={(v) => handleFxParamChange(fxType as any, fxType === 'delay' ? 'time' : fxType === 'reverb' ? 'size' : fxType === 'roll' ? 'beats' : fxType === 'siren' ? 'type' : fxType === 'compressor' ? 'ratio' : 'rate', v)}
                         />
                      </div>
                      <div className="flex items-center gap-0.5">
-                       <span className={`text-[9px] font-bold w-[12px] text-center ${(fxType === 'delay' || fxType === 'reverb') ? 'text-slate-500' : 'text-transparent'}`}>P2</span>
-                       <div className={`${(fxType === 'delay' || fxType === 'reverb') ? 'visible' : 'invisible'}`}>
+                       <span className={`text-[9px] font-bold w-[12px] text-center ${(fxType === 'delay' || fxType === 'reverb' || fxType === 'siren' || fxType === 'compressor') ? 'text-slate-500' : 'text-transparent'}`}>P2</span>
+                       <div className={`${(fxType === 'delay' || fxType === 'reverb' || fxType === 'siren' || fxType === 'compressor') ? 'visible' : 'invisible'}`}>
                          <RotaryKnob 
                             label="P2" hideLabel={true}
                             size="xs" 
-                            min={fxType === 'reverb' ? 0.1 : 0} 
-                            max={fxType === 'reverb' ? 10.0 : 0.95} 
-                            step={fxType === 'reverb' ? 0.1 : 0.01} 
-                            value={fxType === 'delay' ? state.fx.delayFeedback : fxType === 'reverb' ? state.fx.reverbDecay : 0.5} 
-                            onChange={(v) => fxType === 'delay' ? handleFxParamChange('delay', 'feedback', v) : fxType === 'reverb' ? handleFxParamChange('reverb', 'decay', v) : null}
+                            min={fxType === 'reverb' ? 0.1 : fxType === 'siren' ? 50 : fxType === 'compressor' ? -60.0 : 0} 
+                            max={fxType === 'reverb' ? 10.0 : fxType === 'siren' ? 2000 : fxType === 'compressor' ? 0.0 : 0.95} 
+                            step={fxType === 'reverb' ? 0.1 : fxType === 'siren' ? 1.0 : 0.1} 
+                            value={fxType === 'delay' ? state.fx.delayFeedback : fxType === 'reverb' ? state.fx.reverbDecay : fxType === 'siren' ? state.fx.sirenFreq : fxType === 'compressor' ? state.fx.compressorThresh : 0.5} 
+                            onChange={(v) => fxType === 'delay' ? handleFxParamChange('delay', 'feedback', v) : fxType === 'reverb' ? handleFxParamChange('reverb', 'decay', v) : fxType === 'siren' ? handleFxParamChange('siren', 'freq', v) : fxType === 'compressor' ? handleFxParamChange('compressor', 'thresh', v) : null}
                           />
                        </div>
                      </div>
                      <div className="flex items-center gap-0.5">
-                       <span className={`text-[9px] font-bold w-[12px] text-center ${fxType === 'reverb' ? 'text-slate-500' : 'text-transparent'}`}>P3</span>
-                       <div className={`${fxType === 'reverb' ? 'visible' : 'invisible'}`}>
+                       <span className={`text-[9px] font-bold w-[12px] text-center ${(fxType === 'reverb' || fxType === 'siren' || fxType === 'compressor') ? 'text-slate-500' : 'text-transparent'}`}>P3</span>
+                       <div className={`${(fxType === 'reverb' || fxType === 'siren' || fxType === 'compressor') ? 'visible' : 'invisible'}`}>
                          <RotaryKnob 
                             label="P3" hideLabel={true}
                             size="xs" 
-                            min={0} max={100} step={1} 
-                            value={fxType === 'reverb' ? state.fx.reverbPredelay : 0} 
-                            onChange={(v) => fxType === 'reverb' && handleFxParamChange('reverb', 'predelay', v)}
+                            min={fxType === 'siren' ? 0.1 : fxType === 'compressor' ? 0.001 : 0} 
+                            max={fxType === 'siren' ? 20.0 : fxType === 'compressor' ? 1.0 : 100} 
+                            step={fxType === 'siren' ? 0.1 : fxType === 'compressor' ? 0.001 : 1} 
+                            value={fxType === 'reverb' ? state.fx.reverbPredelay : fxType === 'siren' ? state.fx.sirenLfoRate : fxType === 'compressor' ? state.fx.compressorAttack : 0} 
+                            onChange={(v) => fxType === 'reverb' ? handleFxParamChange('reverb', 'predelay', v) : fxType === 'siren' ? handleFxParamChange('siren', 'lfoRate', v) : fxType === 'compressor' ? handleFxParamChange('compressor', 'attack', v) : null}
                           />
                        </div>
                      </div>
                      <div className="flex items-center gap-0.5">
-                       <span className={`text-[9px] font-bold w-[12px] text-center ${fxType === 'reverb' ? 'text-slate-500' : 'text-transparent'}`}>P4</span>
-                       <div className={`${fxType === 'reverb' ? 'visible' : 'invisible'}`}>
+                       <span className={`text-[9px] font-bold w-[12px] text-center ${(fxType === 'reverb' || fxType === 'siren' || fxType === 'compressor') ? 'text-slate-500' : 'text-transparent'}`}>P4</span>
+                       <div className={`${(fxType === 'reverb' || fxType === 'siren' || fxType === 'compressor') ? 'visible' : 'invisible'}`}>
                          <RotaryKnob 
                             label="P4" hideLabel={true}
                             size="xs" 
-                            min={-1} max={1} step={0.01} 
-                            value={fxType === 'reverb' ? state.fx.reverbColor : 0} 
-                            onChange={(v) => fxType === 'reverb' && handleFxParamChange('reverb', 'color', v)}
+                            min={fxType === 'reverb' ? -1 : fxType === 'siren' ? 0.0 : fxType === 'compressor' ? 0.01 : 0} 
+                            max={fxType === 'reverb' ? 1 : fxType === 'siren' ? 2000.0 : fxType === 'compressor' ? 2.0 : 1} 
+                            step={0.01} 
+                            value={fxType === 'reverb' ? state.fx.reverbColor : fxType === 'siren' ? state.fx.sirenLfoDepth : fxType === 'compressor' ? state.fx.compressorRelease : 0} 
+                            onChange={(v) => fxType === 'reverb' ? handleFxParamChange('reverb', 'color', v) : fxType === 'siren' ? handleFxParamChange('siren', 'lfoDepth', v) : fxType === 'compressor' ? handleFxParamChange('compressor', 'release', v) : null}
                           />
                        </div>
                      </div>

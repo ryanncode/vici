@@ -16,8 +16,17 @@ export interface FxState {
   phaserRate: number;
   gateOn: boolean;
   rollOn: boolean;
+  rollBeats: number;
   sirenOn: boolean;
+  sirenType: number;
+  sirenFreq: number;
+  sirenLfoRate: number;
+  sirenLfoDepth: number;
   compressorOn: boolean;
+  compressorRatio: number;
+  compressorThresh: number;
+  compressorAttack: number;
+  compressorRelease: number;
 }
 
 export interface DeckState {
@@ -58,8 +67,17 @@ const initialFxState: FxState = {
   phaserRate: 0.5,
   gateOn: false,
   rollOn: false,
+  rollBeats: 1.0,
   sirenOn: false,
+  sirenType: 1,
+  sirenFreq: 300.0,
+  sirenLfoRate: 2.0,
+  sirenLfoDepth: 500.0,
   compressorOn: false,
+  compressorRatio: 2.0,
+  compressorThresh: -12.0,
+  compressorAttack: 0.01,
+  compressorRelease: 0.1,
 };
 
 const initialDeckState: DeckState = {
