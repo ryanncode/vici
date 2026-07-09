@@ -88,7 +88,6 @@ export function useLibrary() {
     const unScanned: { id: string, rawFile: File, filePath: string, opfsPath?: string }[] = [];
 
     const playlistName = filesToProcess[0].path.split('/')[0] || `Crate ${new Date().toLocaleDateString()}`;
-    const playlistId = `playlist-${Date.now()}`;
 
     let current = 0;
     for (const item of filesToProcess) {
@@ -164,6 +163,7 @@ export function useLibrary() {
              if (cached) {
                 newIds.push(cached.id);
                 newHandles[cached.id] = { fileHandle: handle };
+                await db.tracks.update(cached.id, { fileHandle: handle });
                 if (!cached.isScanned || cached.duration === 0) {
                   unScanned.push({ id: cached.id, fileHandle: handle, filePath: handle.name });
                 }
@@ -176,7 +176,8 @@ export function useLibrary() {
                   title: handle.name.replace(/\.[^/.]+$/, ""),
                   artist: 'Unknown Artist',
                   bpm: 120,
-                  duration: 0
+                  duration: 0,
+                  fileHandle: handle
                 });
                 newIds.push(id);
                 newHandles[id] = { fileHandle: handle };
@@ -185,7 +186,6 @@ export function useLibrary() {
           }
           
           const playlistName = handles[0].name.split('/')[0] || `Folder ${new Date().toLocaleDateString()}`;
-          const playlistId = `playlist-${Date.now()}`;
           let playlistId = `playlist-${Date.now()}`;
           const existing = await db.playlists.where('name').equals(playlistName).first();
           if (existing) {
@@ -247,6 +247,7 @@ export function useLibrary() {
       if (cached) {
          newIds.push(cached.id);
          newHandles[cached.id] = { rawFile: file };
+         await db.tracks.update(cached.id, { rawFile: file });
          if (!cached.isScanned || cached.duration === 0) {
            unScanned.push({ id: cached.id, rawFile: file, filePath: file.name });
          }
@@ -259,7 +260,8 @@ export function useLibrary() {
            title: file.name.replace(/\.[^/.]+$/, ""),
            artist: 'Local File',
            bpm: 120,
-           duration: 0
+           duration: 0,
+           rawFile: file
          });
          newIds.push(id);
          newHandles[id] = { rawFile: file };
@@ -268,7 +270,6 @@ export function useLibrary() {
     }
 
     const playlistName = `Folder ${new Date().toLocaleDateString()}`;
-    const playlistId = `playlist-${Date.now()}`;
     let playlistId = `playlist-${Date.now()}`;
     const existing = await db.playlists.where('name').equals(playlistName).first();
     if (existing) {
