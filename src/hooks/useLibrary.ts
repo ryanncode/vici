@@ -247,7 +247,6 @@ export function useLibrary() {
       if (cached) {
          newIds.push(cached.id);
          newHandles[cached.id] = { rawFile: file };
-         await db.tracks.update(cached.id, { rawFile: file });
          if (!cached.isScanned || cached.duration === 0) {
            unScanned.push({ id: cached.id, rawFile: file, filePath: file.name });
          }
@@ -260,8 +259,7 @@ export function useLibrary() {
            title: file.name.replace(/\.[^/.]+$/, ""),
            artist: 'Local File',
            bpm: 120,
-           duration: 0,
-           rawFile: file
+           duration: 0
          });
          newIds.push(id);
          newHandles[id] = { rawFile: file };
