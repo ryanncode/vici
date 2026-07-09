@@ -370,7 +370,7 @@ export const CenterMixer: React.FC = () => {
           <RotaryKnob label="Filter" size="sm" color="blue" min={-100} max={100} step={1} value={deckA.filter} onChange={(v) => handleFilterChange('A', v)} onDoubleClick={() => handleFilterChange('A', 0)} />
           
           {/* Fader & VU Block */}
-          <div className="flex flex-col items-center gap-1">
+          <div className="flex flex-col items-center gap-1 mb-[5px]">
             <button
               onClick={() => handleCueToggle('A')}
               className={`w-12 h-5 rounded flex items-center justify-center border transition-colors shadow-sm ${deckA.isCue ? 'bg-orange-500 text-white border-orange-400' : 'bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-700 hover:bg-slate-300 dark:hover:bg-slate-700'}`}
@@ -416,7 +416,7 @@ export const CenterMixer: React.FC = () => {
           <RotaryKnob label="Filter" size="sm" color="amber" min={-100} max={100} step={1} value={deckB.filter} onChange={(v) => handleFilterChange('B', v)} onDoubleClick={() => handleFilterChange('B', 0)} />
           
           {/* Fader & VU Block */}
-          <div className="flex flex-col items-center gap-1">
+          <div className="flex flex-col items-center gap-1 mb-[5px]">
             <button
               onClick={() => handleCueToggle('B')}
               className={`w-12 h-5 rounded flex items-center justify-center border transition-colors shadow-sm ${deckB.isCue ? 'bg-orange-500 text-white border-orange-400' : 'bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-700 hover:bg-slate-300 dark:hover:bg-slate-700'}`}
