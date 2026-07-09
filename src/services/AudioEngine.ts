@@ -433,6 +433,10 @@ export class Deck {
     if (this.cueGainNode) {
       this.cueGainNode.gain.value = isCue ? 1.0 : 0.0;
     }
+    const engine = AudioEngine.getInstance();
+    if (isCue && engine.cueAudioElement && engine.cueAudioElement.paused) {
+      engine.cueAudioElement.play().catch(e => console.warn("Cue audio play prevented", e));
+    }
   }
 }
 
@@ -484,7 +488,27 @@ export class AudioEngine {
 
     this.cueAudioElement = new Audio();
     this.cueAudioElement.srcObject = this.cueDestination.stream;
-    this.cueAudioElement.play().catch(e => console.warn("Cue audio autoplay prevented", e));
+    this.cueAudioElement.style.display = 'none';
+    document.body.appendChild(this.cueAudioElement);
+
+    // Restore saved headphone device and volume
+    const savedDevice = localStorage.getItem('vici_cue_device');
+    if (savedDevice && 'setSinkId' in this.cueAudioElement) {
+      (this.cueAudioElement as any).setSinkId(savedDevice === 'default' ? '' : savedDevice).catch(() => {});
+    }
+    const savedVol = localStorage.getItem('vici_cue_volume');
+    if (savedVol) {
+      this.cueBusGainNode.gain.value = parseFloat(savedVol);
+    }
+    
+    // Add interaction listener to jumpstart audio
+    const jumpstartCue = () => {
+      if (this.cueAudioElement.paused) {
+        this.cueAudioElement.play().catch(() => {});
+      }
+      document.removeEventListener('click', jumpstartCue);
+    };
+    document.addEventListener('click', jumpstartCue);
 
     this.deckA = new Deck('A', this.masterGainNode, this.cueBusGainNode);
     this.deckB = new Deck('B', this.masterGainNode, this.cueBusGainNode);
@@ -575,11 +599,17 @@ export class AudioEngine {
   }
 
   public async setHeadphoneDevice(deviceId: string): Promise<void> {
-    if (this.cueAudioElement && 'setSinkId' in this.cueAudioElement) {
-      try {
-        await (this.cueAudioElement as any).setSinkId(deviceId);
-      } catch (err) {
-        console.error("Failed to set headphone audio device", err);
+    if (this.cueAudioElement) {
+      if ('setSinkId' in this.cueAudioElement) {
+        try {
+          // If 'default', it might need to be empty string in some implementations
+          await (this.cueAudioElement as any).setSinkId(deviceId === 'default' ? '' : deviceId);
+        } catch (err) {
+          console.error("Failed to set headphone audio device", err);
+        }
+      }
+      if (this.cueAudioElement.paused) {
+        this.cueAudioElement.play().catch(e => console.warn("Cue play prevented", e));
       }
     }
   }
