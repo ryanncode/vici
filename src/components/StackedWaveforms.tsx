@@ -327,6 +327,11 @@ const ZoomWaveform: React.FC<ZoomWaveformProps> = React.memo(({
       const width = rect.width;
       const height = rect.height;
 
+      if (width <= 0 || height <= 0) {
+        animationFrameId = requestAnimationFrame(drawZoomedWaveform);
+        return;
+      }
+
       ctx.clearRect(0, 0, width, height);
 
       // Light mode 'multiply' blending requires a solid white background 
