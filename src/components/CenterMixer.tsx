@@ -108,7 +108,7 @@ export const RotaryKnob = ({
       >
         <div className="absolute inset-0" style={{ transform: `rotate(${rotation}deg)` }}>
           {/* Indicator Line */}
-          <div className="absolute left-1/2 -translate-x-1/2 top-1 w-1 h-1/2 bg-slate-600 dark:bg-white/80 rounded-full pointer-events-none"></div>
+          <div className="absolute left-1/2 -translate-x-1/2 top-1 bottom-1/2 w-1 bg-slate-600 dark:bg-white/80 rounded-full pointer-events-none"></div>
         </div>
         
         {/* The hidden input to capture events, disabled to allow pointer events on parent */}
